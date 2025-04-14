@@ -1,0 +1,88 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# 虛擬環境
+.venv/
+venv/
+env/
+ENV/
+
+# 單元測試 / 覆蓋率報告
+htmlcov/
+.tox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+.hypothesis/
+.pytest_cache/
+
+# 日誌檔案
+logs/
+*.log
+npm-debug.log*
+
+# 資料庫
+*.db
+*.sqlite3
+
+# 環境變數
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+.env.bak
+
+# IDE檔案
+.idea/
+.vscode/
+*.swp
+*.swo
+.spyderproject
+.spyproject
+.ropeproject
+.mr.developer.cfg
+.project
+.pydevproject
+.settings/
+
+# 系統檔案
+.DS_Store
+Thumbs.db
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# 資料目錄
+data/vector_db/
+data/input/*
+data/output/*
+data/cbeta/*.xml
+
+# 保留特定檔案
+!data/input/.gitkeep
+!data/output/.gitkeep
+!data/vector_db/.gitkeep
+!data/cbeta/.gitkeep
+!data/cbeta/*.json 

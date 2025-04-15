@@ -165,7 +165,7 @@ bodhibot-line-beta/
 
 1. 前往 [LINE Developers](https://developers.line.biz/) 創建一個新的 Provider 和 Channel
 2. 在 Channel 設定中獲取 Channel secret 和 Channel access token
-3. 設置 Webhook URL 為 `https://您的網域/api/line/webhook`
+3. 設置 Webhook URL 為 `https://您的網域/webhook` 或 `https://您的網域/api/line/webhook` (兩個路徑都可使用)
 4. 開啟 "Use webhook" 選項
 5. 將 Channel secret 和 Channel access token 添加到 `.env` 文件
 

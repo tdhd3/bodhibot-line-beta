@@ -8,6 +8,7 @@ from fastapi.responses import JSONResponse
 
 from app.core.config import settings
 from app.api.routes.line_webhook import router as line_router
+from app.api.routes.line_webhook import line_webhook
 from app.data_processing.file_processor import FileProcessor
 from app.data_processing.cbeta_processor import CBETAProcessor
 
@@ -41,6 +42,9 @@ api_router.include_router(line_router, prefix="/line", tags=["LINE Bot"])
 
 # 包含API路由
 app.include_router(api_router)
+
+# 添加直接的webhook端點
+app.post("/webhook")(line_webhook)
 
 # 文件處理器
 file_processor = None

@@ -1,5 +1,5 @@
 # 使用官方 Python 鏡像作為基礎
-FROM python:3.9-slim
+FROM python:3.10-slim
 
 # 設置工作目錄
 WORKDIR /app

@@ -7,9 +7,9 @@ load_dotenv()
 
 class Settings:
     # 基本設定
-    PROJECT_NAME: str = "佛教智慧對話系統"
+    PROJECT_NAME: str = "菩薩小老師"
     PROJECT_VERSION: str = "0.1.0"
-    DESCRIPTION: str = "結合佛教唯識學與語意檢索的LINE智慧對話系統"
+    DESCRIPTION: str = "以慈悲智慧引導的佛法修學與生活應用LINE對話系統"
     
     # API設定
     API_PREFIX: str = "/api"
@@ -68,16 +68,16 @@ class Settings:
     
     # 用戶回饋表單
     USER_FEEDBACK_FORM: str = os.getenv("USER_FEEDBACK_FORM", "https://docs.google.com/forms/d/17B148aK3REfbUEtmi3isQQEkQwvvIlaKgte00Yde_zE/edit")
-
-# 視覺化設定
-ENABLE_MARKDOWN = True
-ENABLE_EMOJI = True
-THEME_COLOR = "#1DB446"  # 主題顏色，用於Flex Message頭部
-MAX_IMAGE_WIDTH = 1024    # 圖片最大寬度
-MAX_IMAGE_HEIGHT = 1024   # 圖片最大高度
-FONT_SIZE_LARGE = "lg"    # 大字體尺寸
-FONT_SIZE_MEDIUM = "md"   # 中字體尺寸
-FONT_SIZE_SMALL = "sm"    # 小字體尺寸
+    
+    # 視覺化設定
+    ENABLE_MARKDOWN: bool = True
+    ENABLE_EMOJI: bool = True
+    THEME_COLOR: str = "#1DB446"  # 主題顏色，用於Flex Message頭部
+    MAX_IMAGE_WIDTH: int = 1024    # 圖片最大寬度
+    MAX_IMAGE_HEIGHT: int = 1024   # 圖片最大高度
+    FONT_SIZE_LARGE: str = "lg"    # 大字體尺寸
+    FONT_SIZE_MEDIUM: str = "md"   # 中字體尺寸
+    FONT_SIZE_SMALL: str = "sm"    # 小字體尺寸
 
 # 實例化設定
 settings = Settings() 

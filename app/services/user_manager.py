@@ -110,9 +110,14 @@ class UserManager:
                 "timestamp": datetime.now().isoformat()
             }
             
-            # 使用本地存儲
+            # 使用本地存儲，確保正確初始化所有必要的字段
             if user_id not in self.local_storage:
-                self.local_storage[user_id] = {"chat_history": []}
+                self.local_storage[user_id] = {
+                    "chat_history": [],
+                    "request_timestamps": []
+                }
+            elif "chat_history" not in self.local_storage[user_id]:
+                self.local_storage[user_id]["chat_history"] = []
             
             self.local_storage[user_id]["chat_history"].append(message)
             
@@ -193,7 +198,12 @@ class UserManager:
             
             # 使用本地存儲
             if user_id not in self.local_storage:
-                self.local_storage[user_id] = {"request_timestamps": []}
+                self.local_storage[user_id] = {
+                    "chat_history": [],
+                    "request_timestamps": []
+                }
+            elif "request_timestamps" not in self.local_storage[user_id]:
+                self.local_storage[user_id]["request_timestamps"] = []
             
             # 添加當前請求時間戳
             self.local_storage[user_id]["request_timestamps"].append(current_time)

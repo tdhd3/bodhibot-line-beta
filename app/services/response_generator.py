@@ -30,72 +30,70 @@ class ResponseGenerator:
         
         # 初始化提示模板 - 用於生成回應
         self.response_prompt = ChatPromptTemplate.from_template("""
-您是一位精通佛教唯識學的專家，能夠提供有關佛法的詮釋、解說和應用指導。
+您是「菩薩小老師」，一位結合唯識學智慧的佛法導師，能以自然又有深度的方式引導學習者。
 
 用戶問題：{user_query}
 
 以下是與問題相關的經文:
 {relevant_texts}
 
-回應要求：
-1. 根據用戶的認知層級（{response_level}）調整回應深度
-2. 使用四攝法策略 - {four_she_strategy} 來建立親近感
-3. 保持回應簡潔，易於理解，但不失專業性
-4. 提供適合用戶認知層級的解釋和實踐建議
-5. 回應應體現唯識學核心概念，幫助用戶理解心識轉化的過程
-6. 適度引用提供的經文內容，以增強回應的可信度
-7. 你可以使用Markdown語法來格式化回應，使用**粗體**強調重點，使用*斜體*表示經文引用，使用列表或分隔線等元素增強可讀性
-8. 回應結構建議：概述 → 核心解釋 → 實踐指導 → 結語
+回應指南：
+1. 根據用戶層級（{response_level}）調整回應深度，採用{four_she_strategy}的溝通方式
+2. 以簡潔自然的對話風格回應，同時保持專業深度
+3. 從唯識學「八識」的角度分析用戶問題根源
+4. 提供具體可行的方法，而非表面的開示
+5. 適當引用經文支持觀點，使用完整出處格式：
+   - 直接引用：「出處：《經名》，原文：「引用原文」，CBETA網址：https://cbetaonline.dila.edu.tw/zh/[經文ID]」
+   - 相關參考：「相關資料：《經名》，CBETA網址：https://cbetaonline.dila.edu.tw/zh/[經文ID]」
+6. 回應文字控制在300-400字內，簡潔有力
 
-請開始你的回應（保持在500字以內）:
+請以專業而親切的方式回應，注重深度分析和具體建議：
 """)
         
         # 初始化提示模板 - 用於分類用戶認知層級
         self.classification_prompt = ChatPromptTemplate.from_template("""
-您是一位精通佛教唯識學的專家。您的任務是根據用戶的問題，確定其認知層級和問題類型。
+您是「菩薩小老師」，一位善於理解用戶需求的佛法智慧導師。請根據用戶的問題，判斷其修行階段和問題類型。
 
 用戶問題：{user_query}
 
-請根據以下說明，分析用戶的認知層級：
+修行階段分類：
+1. 初入門階段：對佛法知識尚淺，思維方式較為世俗，關注現實問題
+2. 基礎修學階段：已接觸佛法基本概念，開始思考更深層問題
+3. 深入理解階段：系統性學習佛法，能將佛法與生活連結
+4. 行證實踐階段：有深厚佛法基礎，關注修行實踐和證悟過程
 
-### 認知層級
-1. 第一層（基礎認知層）：對佛法知識缺乏，或僅有表面了解，思維方式較為世俗，通常關注眼前問題的解決。
-2. 第二層（進階探索層）：已初步接觸佛法，了解一些基本概念，開始思考更深層的問題，但尚未系統性學習。
-3. 第三層（深度理解層）：已經系統性學習佛法，能理解較深的佛法概念，能主動思考佛法與生活的關係。
-4. 第四層（修行實踐層）：已有深厚佛法基礎，關注修行實踐和證悟過程，能從唯識學角度思考問題。
+問題類型：
+1. 煩惱解脫型：尋求解決現實煩惱的方法
+2. 見解調和型：探討佛法與現代生活的融合
+3. 生命意義型：對人生意義的探尋
+4. 求法精進型：主動尋求佛法智慧和修行方法
 
-### 問題類型
-1. 煩惱型：主要是尋求解決現實問題的答案，如情緒、人際關係等
-2. 價值觀衝突型：探討佛法與現代生活的矛盾與整合
-3. 虛無傾向型：對人生意義的質疑，或面臨重大生命危機
-4. 求法欲望型：主動尋求佛法智慧和修行方法
-
-請以JSON格式分析用戶的認知層級和問題類型：
+請以JSON格式簡要分析用戶的階段和問題類型：
 """)
         
         # 初始化四攝法策略選擇提示模板
         self.four_she_prompt = ChatPromptTemplate.from_template("""
-您是一位精通佛教四攝法的專家。根據用戶的認知層級和問題類型，請選擇最適合的四攝法策略。
+您是「菩薩小老師」，一位精通四攝法的智慧導師。根據用戶的修行階段和問題類型，請選擇最適合的四攝法策略。
 
-用戶認知層級：{user_level}
+用戶修行階段：{user_level}
 問題類型：{issue_type}
 
 四攝法包括：
-1. 布施（Dana）：通過給予幫助建立關係，可以是物質的或精神的給予
-2. 愛語（Priyavacana）：用溫和、親切的言語與人交流，增進理解
-3. 利行（Arthakrtya）：通過實際行動幫助他人，指導他們走向正確的道路
-4. 同事（Samanarthata）：融入他人的處境，以平等態度與人交往
+1. 布施（Dana）：通過無條件給予幫助建立關係，包括法布施、無畏布施和財布施
+2. 愛語（Priyavacana）：以溫和、親切且循循善誘的言語引導
+3. 利行（Arthakrtya）：提供實用方法，指導學習者走向正確的修行道路
+4. 同事（Samanarthata）：與學習者站在同一立場，以同修身份交流，融入其處境
 
 請考慮以下對應關係：
-- 第一層認知的用戶通常適合布施和愛語為主的策略
-- 第二層認知的用戶適合愛語和利行策略
-- 第三層和第四層認知的用戶適合利行和同事策略
-- 煩惱型問題適合愛語和利行
-- 價值觀衝突型問題適合利行和同事
-- 虛無傾向型問題適合布施和愛語
-- 求法欲望型問題適合利行和同事
+- 初入門階段的用戶通常適合布施和愛語為主的策略
+- 基礎修學階段的用戶適合愛語和利行策略
+- 深入理解和行證實踐階段的用戶適合利行和同事策略
+- 煩惱解脫型問題適合愛語和利行
+- 見解調和型問題適合利行和同事
+- 生命意義型問題適合布施和愛語
+- 求法精進型問題適合利行和同事
 
-請指定最主要的策略（僅選一個）：
+請指定最適合的策略（僅選一個）：
 """)
         
     async def classify_user_input(self, user_query: str) -> Dict[str, str]:
@@ -128,8 +126,8 @@ class ResponseGenerator:
                 # 確保結果包含必要的鍵
                 if "level" not in classification_result or "type" not in classification_result:
                     # 嘗試替代鍵名
-                    level = classification_result.get("認知層級", classification_result.get("user_level", "第一層"))
-                    issue_type = classification_result.get("問題類型", classification_result.get("issue_type", "煩惱型"))
+                    level = classification_result.get("認知層級", classification_result.get("user_level", classification_result.get("stage", classification_result.get("修行階段", "初入門階段"))))
+                    issue_type = classification_result.get("問題類型", classification_result.get("issue_type", "煩惱解脫型"))
                     
                     classification_result = {
                         "level": level,
@@ -138,8 +136,8 @@ class ResponseGenerator:
             else:
                 # 無法解析JSON，使用默認值
                 classification_result = {
-                    "level": "第一層",
-                    "type": "煩惱型"
+                    "level": "初入門階段",
+                    "type": "煩惱解脫型"
                 }
             
             logger.info(f"用戶輸入分類結果: {classification_result}")
@@ -149,8 +147,8 @@ class ResponseGenerator:
             logger.error(f"分類用戶輸入時出錯: {e}", exc_info=True)
             # 返回默認分類
             return {
-                "level": "第一層",
-                "type": "煩惱型"
+                "level": "初入門階段",
+                "type": "煩惱解脫型"
             }
     
     async def select_four_she_strategy(self, user_level: str, issue_type: str) -> str:
@@ -188,11 +186,11 @@ class ResponseGenerator:
                 return "同事"
             else:
                 # 根據層級指定默認策略
-                if "一層" in user_level:
+                if "初入門" in user_level or "一層" in user_level:
                     return "布施"
-                elif "二層" in user_level:
+                elif "基礎修學" in user_level or "二層" in user_level:
                     return "愛語"
-                elif "三層" in user_level:
+                elif "深入理解" in user_level or "三層" in user_level:
                     return "利行"
                 else:
                     return "同事"
@@ -271,30 +269,68 @@ class ResponseGenerator:
             
             # 調用LLM
             response = self.llm.invoke(response_prompt)
+            response_content = response.content
             
             # 5. 整理回應
             references = []
             for text in relevant_texts:
-                if "custom_document" in text and text["custom_document"]:
+                # 檢查回應中是否直接引用了這段經文
+                is_direct_quote = False
+                if text.get("text"):
+                    # 檢查至少15個字符的片段是否出現在回應中
+                    min_quote_length = 15
+                    text_content = text.get("text", "")
+                    
+                    # 如果經文足夠長，嘗試找出可能的引用
+                    if len(text_content) >= min_quote_length:
+                        # 嘗試不同長度的片段
+                        for start_idx in range(0, len(text_content) - min_quote_length + 1, 5):
+                            end_idx = min(start_idx + 30, len(text_content))
+                            segment = text_content[start_idx:end_idx].strip()
+                            
+                            # 避免太短的片段
+                            if len(segment) < min_quote_length:
+                                continue
+                                
+                            # 檢查這個片段是否出現在回應中（考慮標點符號和空格的差異）
+                            clean_segment = ''.join(c for c in segment if c.isalnum())
+                            clean_response = ''.join(c for c in response_content if c.isalnum())
+                            
+                            if len(clean_segment) >= min_quote_length and clean_segment in clean_response:
+                                is_direct_quote = True
+                                break
+                
+                # 檢查回應中是否提到了經名
+                sutra_name = text.get("sutra", "") if not text.get("custom_document", False) else text.get("source", "")
+                if sutra_name and f"《{sutra_name}》" in response_content:
+                    is_direct_quote = True
+                
+                # 檢查出處標記
+                if "出處：" in response_content and sutra_name and f"出處：《{sutra_name}》" in response_content:
+                    is_direct_quote = True
+                
+                if text.get("custom_document", False) or text.get("custom", False):
                     # 自定義文檔參考
                     references.append({
-                        "text": text["text"],
-                        "source": text["source"],
-                        "custom": True
+                        "text": text.get("text", ""),
+                        "source": text.get("source", ""),
+                        "custom": True,
+                        "is_direct_quote": is_direct_quote
                     })
                 else:
                     # CBETA經文參考
                     references.append({
-                        "text": text["text"],
-                        "sutra": text["sutra"],
-                        "sutra_id": text["sutra_id"],
-                        "custom": False
+                        "text": text.get("text", ""),
+                        "sutra": text.get("sutra", ""),
+                        "sutra_id": text.get("sutra_id", ""),
+                        "custom": False,
+                        "is_direct_quote": is_direct_quote
                     })
             
-            logger.info(f"生成回應，用戶層級: {user_level}, 策略: {four_she_strategy}")
+            logger.info(f"生成回應，用戶修行階段: {user_level}, 策略: {four_she_strategy}")
             
             return {
-                "text": response.content,
+                "text": response_content,
                 "references": references,
                 "user_level": user_level,
                 "issue_type": issue_type,
@@ -307,9 +343,98 @@ class ResponseGenerator:
             return {
                 "text": "很抱歉，我在處理您的問題時遇到了困難。請稍後再嘗試，或者換一種方式提問。",
                 "references": [],
-                "user_level": "未知",
-                "issue_type": "未知",
-                "four_she_strategy": "未知"
+                "user_level": "初入門階段",
+                "issue_type": "煩惱解脫型",
+                "four_she_strategy": "愛語"
+            }
+
+    async def _get_chat_completion(self, messages: list) -> dict:
+        """
+        獲取OpenAI聊天完成
+        
+        Args:
+            messages: 對話訊息列表
+            
+        Returns:
+            dict: 回應數據
+        """
+        try:
+            # 添加請求系統訊息
+            system_message = {
+                "role": "system", 
+                "content": f"""
+                你是「菩薩小老師」，一位結合唯識學智慧的佛法導師，以自然親切又有深度的方式引導學習者。
+
+                用戶情況:
+                - 修行階段: {self.user_level_descriptions[self.current_user_level]}
+                - 問題類型: {self.issue_type_descriptions[self.current_issue_type]}
+                - 溝通風格: {self.four_she_strategies[self.current_strategy]}
+
+                回應核心原則：
+                1. 簡潔自然的對話風格，避免說教，但保持專業深度
+                2. 辨識用戶問題背後的真正意圖和心理需求
+                3. 運用唯識學「八識」觀點分析用戶困境（前五識、意識、末那識和阿賴耶識）
+                4. 提供具體可行的建議，不流於表面的開示
+                5. 從「轉識成智」的角度引導用戶面對困難
+                6. 保持客觀，避免主觀判斷
+
+                回答結構（靈活運用，不必固定格式）：
+                1. 簡要分析問題的根源（可從唯識學角度解釋）
+                2. 提供具體實用的方法和建議
+                3. 適當引用經典支持觀點，使用完整出處格式
+
+                引用經典時：
+                - 直接引用時：「出處：《經名》，原文：「引用原文」，CBETA網址：https://cbetaonline.dila.edu.tw/zh/經文ID」
+                - 相關參考時：「相關資料：《經名》，CBETA網址：https://cbetaonline.dila.edu.tw/zh/經文ID」
+
+                回答品質要求：
+                - 精準把握用戶問題核心
+                - 提供深入而非表面的分析
+                - 給出可實踐的方法和建議
+                - 維持溫暖親切但不失專業的語氣
+                - 控制在300-400字，簡潔有力
+
+                請記住：用戶尋求的不只是理論解釋，更需要能夠幫助他們理解自己的困境，並找到實際可行的解決方案。從唯識學的角度幫助他們認識自己的心識運作，以客觀的方式引導他們面對問題。
+                """
+            }
+            
+            # 組合最終消息列表
+            final_messages = [system_message] + messages
+            
+            # 調用 OpenAI API
+            response = self.client.chat.completions.create(
+                model=settings.GPT_MODEL,
+                messages=final_messages,
+                temperature=0.7,
+                max_tokens=1200,
+                top_p=0.9,
+                frequency_penalty=0.5,
+                presence_penalty=0.2,
+                response_format={"type": "json_object"},
+            )
+            
+            # 解析JSON回應
+            response_content = response.choices[0].message.content
+            parsed_response = json.loads(response_content)
+            
+            # 確保必要的字段存在
+            if "response" not in parsed_response:
+                parsed_response["response"] = "抱歉，我無法生成有效的回應。請重新表述您的問題。"
+            
+            if "references" not in parsed_response:
+                parsed_response["references"] = []
+                
+            if "suggestions" not in parsed_response:
+                parsed_response["suggestions"] = []
+            
+            return parsed_response
+        
+        except Exception as e:
+            logger.error(f"獲取聊天完成時出錯: {e}", exc_info=True)
+            return {
+                "response": "抱歉，處理您的請求時遇到問題。請稍後再試或重新表述您的問題。",
+                "references": [],
+                "suggestions": []
             }
 
 # 單例模式實例

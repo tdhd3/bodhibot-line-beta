@@ -5,6 +5,8 @@ import asyncio
 import markdown
 import emoji
 from markdown_it import MarkdownIt
+import re
+import random
 
 from app.core.config import settings
 from app.services.user_manager import user_manager
@@ -14,10 +16,10 @@ logger = logging.getLogger(__name__)
 class QuickReplyManager:
     def __init__(self):
         # 定義常用的快速回覆類別及其建議問題
-        self.quick_replies = {
+        self.quick_reply_categories = {
             "佛法學習": {
                 "label": "佛法學習",
-                "text": "我想學習佛法",
+                "text": "佛法學習",
                 "suggestions": [
                     ("經典詮釋", "什麼是四聖諦？"),
                     ("佛學概念", "如何理解緣起法？"),
@@ -26,7 +28,7 @@ class QuickReplyManager:
             },
             "生活應用": {
                 "label": "生活應用",
-                "text": "我想了解佛法在生活中的應用",
+                "text": "生活應用",
                 "suggestions": [
                     ("人際關係", "如何用佛法處理人際關係？"),
                     ("工作壓力", "工作壓力大時如何運用佛法？"),
@@ -35,20 +37,83 @@ class QuickReplyManager:
             },
             "心靈成長": {
                 "label": "心靈成長",
-                "text": "我想探索心靈成長",
+                "text": "心靈成長",
                 "suggestions": [
                     ("情緒管理", "如何用佛法智慧處理負面情緒"),
                     ("自我探索", "如何從佛法角度了解自己的本性"),
                     ("轉化煩惱", "如何將煩惱轉化為菩提")
                 ]
             },
-            "系統": {
-                "label": "系統",
+            "時事省思": {
+                "label": "時事省思",
+                "text": "時事省思",
+                "suggestions": [
+                    "從佛法角度如何看待現代社會過度依賴數位設備的現象？",
+                    "佛教觀點下，如何理解和回應全球氣候變化帶來的挑戰？",
+                    "如何以佛法智慧面對現代社會的快節奏生活與壓力？",
+                    "佛教對於社交媒體時代人際關係變化有何啟示？",
+                    "面對經濟不平等日益擴大的社會現象，佛法有何見解？"
+                ]
+            },
+            "禪修引導": {
+                "label": "禪修引導",
+                "text": "禪修引導",
+                "suggestions": []
+            },
+            "系統功能": {
+                "label": "系統功能",
                 "text": "系統功能",
                 "suggestions": [
-                    ("清除記錄", "清除對話記錄"),
-                    ("使用說明", "查看使用說明"),
-                    ("用戶回饋", "提供使用回饋")
+                    "清除對話記錄",
+                    "使用說明",
+                    "提供回饋"
+                ]
+            },
+            "使用方式": {
+                "label": "使用方式",
+                "text": "使用方式",
+                "suggestions": [
+                    "如何正確使用菩薩小老師？",
+                    "有什麼功能可以使用？",
+                    "可以問哪些類型的問題？",
+                    "有使用限制嗎？",
+                    "如何獲得最佳回答？"
+                ]
+            }
+        }
+        
+        # 快速回應詞庫 - 處理簡單問候和常見問題
+        self.quick_responses = {
+            "問候": {
+                "keywords": ["你好", "哈囉", "嗨", "早安", "午安", "晚安", "安", "喂"],
+                "responses": [
+                    "您好！很高興能與您交流。有什麼佛法相關的問題想請教嗎？",
+                    "阿彌陀佛！願您今日安康喜樂。有什麼我能為您解答的嗎？",
+                    "您好！願您身心自在。有什麼修行或佛法方面的疑惑嗎？"
+                ]
+            },
+            "自我介紹": {
+                "keywords": ["你是誰", "你叫什麼", "介紹自己", "自我介紹", "是誰", "機器人", "介紹一下"],
+                "responses": [
+                    "我是「菩薩小老師」，一位以佛法智慧為基礎的數位助手。我的目標是幫助您理解佛教教義並將其應用於日常生活中。雖然我不能替代師長，但我很樂意在您的學習旅程中提供支持。",
+                    "阿彌陀佛！我是「菩薩小老師」，致力於以慈悲和智慧分享佛法。我可以回答佛教相關問題，提供修行建議，或者探討如何將佛法運用在生活中。有什麼我能為您效勞的嗎？",
+                    "您好！我是「菩薩小老師」，一個以佛教智慧為基礎的AI助手。我的設計目的是分享佛法知識、提供修行建議，並幫助將佛教智慧融入現代生活。請問有什麼我能協助您的嗎？"
+                ]
+            },
+            "感謝": {
+                "keywords": ["謝謝", "感謝", "多謝", "感恩"],
+                "responses": [
+                    "不客氣！能夠分享佛法智慧是我的榮幸。若有其他問題，隨時請教。",
+                    "阿彌陀佛！助人學習是菩薩道的實踐。祝您修行順利！",
+                    "隨喜功德！願我們共同在佛法中獲得智慧與安樂。"
+                ]
+            },
+            "讚美": {
+                "keywords": ["很棒", "做得好", "厲害", "真好", "不錯", "棒"],
+                "responses": [
+                    "感恩您的鼓勵！願佛法的光明照亮我們的道路。",
+                    "阿彌陀佛！能夠幫到您是我的榮幸。願您在佛法的道路上不斷精進。",
+                    "隨喜功德！願我們在法路上共同成長，互相鼓勵。"
                 ]
             }
         }
@@ -97,31 +162,33 @@ class QuickReplyManager:
     def get_quick_replies(self, user_id: str = None) -> List[Dict[str, Any]]:
         """獲取快捷回覆選項"""
         try:
-            replies = []
-            for category, data in self.quick_replies.items():
-                if category != "系統":  # 系統功能不顯示在主選單
-                    replies.append({
-                        "type": "message",
-                        "label": data["label"],
-                        "text": data["text"]
-                    })
+            items = []
+            for category, data in self.quick_reply_categories.items():
+                if category != "系統功能":  # 系統功能不顯示在主選單
+                    button = QuickReplyButton(
+                        action=MessageAction(label=data["label"], text=data["text"])
+                    )
+                    items.append(button)
             
-            return replies
+            return QuickReply(items=items)
             
         except Exception as e:
             logger.error(f"獲取快捷回覆時發生錯誤: {str(e)}")
-            return []
+            return QuickReply(items=[])
     
-    def get_suggested_replies(self, query: str, user_id: str = None) -> List[Dict[str, Any]]:
+    def get_suggested_replies(self, query: str, user_id: str = None) -> QuickReply:
         """根據用戶輸入生成建議回覆"""
         try:
             suggestions = []
             
             # 檢查是否包含特定關鍵字
             category = self._get_category_by_keywords(query)
-            if category in self.quick_replies:
-                suggestions_data = self.quick_replies[category]["suggestions"]
-                suggestions = [text for _, text in suggestions_data]
+            if category in self.quick_reply_categories:
+                suggestions_data = self.quick_reply_categories[category]["suggestions"]
+                if isinstance(suggestions_data[0], tuple):
+                    suggestions = [text for _, text in suggestions_data]
+                else:
+                    suggestions = suggestions_data
             
             # 如果沒有找到相關建議，添加默認建議
             if not suggestions:
@@ -130,11 +197,67 @@ class QuickReplyManager:
             # 確保不超過5個建議
             suggestions = suggestions[:5]
             
-            return [{"type": "message", "text": suggestion} for suggestion in suggestions]
+            # 創建快速回覆按鈕
+            items = []
+            for suggestion in suggestions:
+                items.append(QuickReplyButton(
+                    action=MessageAction(
+                        label=suggestion[:12] + "..." if len(suggestion) > 12 else suggestion,
+                        text=suggestion
+                    )
+                ))
+            
+            # 添加主選單按鈕，確保用戶始終能夠返回主選單
+            items.append(QuickReplyButton(
+                action=MessageAction(
+                    label="主選單",
+                    text="主選單"
+                )
+            ))
+            
+            return QuickReply(items=items)
             
         except Exception as e:
             logger.error(f"生成建議回覆時發生錯誤: {str(e)}")
-            return [{"type": "message", "text": suggestion} for suggestion in self.default_suggestions]
+            items = []
+            for suggestion in self.default_suggestions[:2]:
+                items.append(QuickReplyButton(
+                    action=MessageAction(
+                        label=suggestion[:12] + "..." if len(suggestion) > 12 else suggestion,
+                        text=suggestion
+                    )
+                ))
+            
+            # 在發生錯誤時也確保有主選單按鈕
+            items.append(QuickReplyButton(
+                action=MessageAction(
+                    label="主選單",
+                    text="主選單"
+                )
+            ))
+            
+            return QuickReply(items=items)
+    
+    def is_simple_query(self, query: str) -> Tuple[bool, str, str]:
+        """
+        檢查是否為簡單問候或自我介紹等問題
+        
+        Args:
+            query: 用戶查詢
+            
+        Returns:
+            Tuple[bool, str, str]: (是否為簡單問題, 類型, 回應)
+        """
+        query = query.lower().strip()
+        
+        for type_name, data in self.quick_responses.items():
+            for keyword in data["keywords"]:
+                if keyword in query:
+                    # 隨機選擇一個回應
+                    response = random.choice(data["responses"])
+                    return True, type_name, response
+        
+        return False, "", ""
     
     def handle_clear_history(self, user_id: str) -> str:
         """處理清除對話歷史的請求"""
@@ -173,40 +296,57 @@ class QuickReplyManager:
             QuickReply: LINE 快速回覆對象
         """
         try:
-            # 判斷內容類別
+            items = []
+            
+            # 根據內容關鍵詞檢測類別
             category = self._get_category_by_keywords(content)
             
-            # 獲取該類別的按鈕選項或使用默認類別
-            if category not in self.quick_replies:
-                category = "佛法學習"  # 如果找不到匹配類別，使用默認類別
+            # 從該類別中獲取建議
+            if category in self.quick_reply_categories:
+                suggestions_data = self.quick_reply_categories[category]["suggestions"]
+                
+                # 處理不同格式的建議數據
+                if isinstance(suggestions_data, list):
+                    # 如果是元組列表(類別, 文本)
+                    if suggestions_data and isinstance(suggestions_data[0], tuple):
+                        for label, text in suggestions_data[:3]:  # 只取前3個
+                            items.append(QuickReplyButton(
+                                action=MessageAction(
+                                    label=label[:12] + "..." if len(label) > 12 else label,
+                                    text=text
+                                )
+                            ))
+                    # 如果是普通文本列表
+                    else:
+                        for suggestion in suggestions_data[:3]:  # 只取前3個
+                            items.append(QuickReplyButton(
+                                action=MessageAction(
+                                    label=suggestion[:12] + "..." if len(suggestion) > 12 else suggestion,
+                                    text=suggestion
+                                )
+                            ))
             
-            buttons = []
-            for label, text in self.quick_replies[category]["suggestions"]:
-                action = MessageAction(label=label, text=text)
-                button = QuickReplyButton(action=action)
-                buttons.append(button)
+            # 添加主選單按鈕
+            items.append(QuickReplyButton(
+                action=MessageAction(
+                    label="主選單",
+                    text="主選單"
+                )
+            ))
             
-            # 加入一個返回主選單的按鈕
-            action = MessageAction(label="🏠 主選單", text="主選單")
-            button = QuickReplyButton(action=action)
-            buttons.append(button)
-
-            # 加入一個回饋表單按鈕
-            uri_action = URIAction(label="📝 用戶回饋", uri=self.feedback_form_url)
-            feedback_button = QuickReplyButton(action=uri_action)
-            buttons.append(feedback_button)
+            # 添加相關類別按鈕
+            items.append(QuickReplyButton(
+                action=MessageAction(
+                    label=self.quick_reply_categories[category]["label"],
+                    text=self.quick_reply_categories[category]["text"]
+                )
+            ))
             
-            return QuickReply(items=buttons)
-            
+            return QuickReply(items=items)
         except Exception as e:
-            logger.error(f"生成快速回覆時發生錯誤: {str(e)}")
-            # 返回默認的佛法學習類別
-            buttons = []
-            for label, text in self.quick_replies["佛法學習"]["suggestions"]:
-                action = MessageAction(label=label, text=text)
-                button = QuickReplyButton(action=action)
-                buttons.append(button)
-            return QuickReply(items=buttons)
+            logger.error(f"生成上下文快速回覆時發生錯誤: {str(e)}")
+            # 如果出錯，返回主選單
+            return self.get_main_menu()
     
     def get_category_quick_reply(self, category: str) -> QuickReply:
         """
@@ -219,78 +359,134 @@ class QuickReplyManager:
             QuickReply: LINE 快速回覆對象
         """
         try:
-            if category in self.quick_replies:
-                buttons = []
-                for label, text in self.quick_replies[category]["suggestions"]:
-                    action = MessageAction(label=label, text=text)
-                    button = QuickReplyButton(action=action)
-                    buttons.append(button)
+            items = []
+            
+            # 根據類別獲取對應的建議
+            if category == "系統":
+                items.append(QuickReplyButton(
+                    action=MessageAction(
+                        label="清除對話記錄",
+                        text="清除對話記錄"
+                    )
+                ))
+                items.append(QuickReplyButton(
+                    action=MessageAction(
+                        label="使用方式",
+                        text="使用方式"
+                    )
+                ))
+                items.append(QuickReplyButton(
+                    action=URIAction(
+                        label="提供回饋",
+                        uri=self.feedback_form_url
+                    )
+                ))
+            elif category in self.quick_reply_categories:
+                suggestions_data = self.quick_reply_categories[category]["suggestions"]
                 
-                # 加入一個返回主選單的按鈕
-                action = MessageAction(label="🏠 主選單", text="主選單")
-                button = QuickReplyButton(action=action)
-                buttons.append(button)
-
-                # 加入一個回饋表單按鈕
-                uri_action = URIAction(label="📝 用戶回饋", uri=self.feedback_form_url)
-                feedback_button = QuickReplyButton(action=uri_action)
-                buttons.append(feedback_button)
-                
-                return QuickReply(items=buttons)
-            else:
-                # 如果類別不存在，返回主選單
-                return self.get_main_menu()
+                if isinstance(suggestions_data[0], tuple):
+                    for label, text in suggestions_data:
+                        items.append(QuickReplyButton(
+                            action=MessageAction(
+                                label=label[:12] + "..." if len(label) > 12 else label,
+                                text=text
+                            )
+                        ))
+                else:
+                    for suggestion in suggestions_data[:5]:  # 限制最多5個建議
+                        items.append(QuickReplyButton(
+                            action=MessageAction(
+                                label=suggestion[:12] + "..." if len(suggestion) > 12 else suggestion,
+                                text=suggestion
+                            )
+                        ))
+            
+            # 始終添加一個返回主選單的按鈕
+            items.append(QuickReplyButton(
+                action=MessageAction(
+                    label="回到主選單",
+                    text="主選單"
+                )
+            ))
+            
+            return QuickReply(items=items)
         except Exception as e:
             logger.error(f"獲取類別快速回覆時發生錯誤: {str(e)}")
+            # 出錯時返回主選單
             return self.get_main_menu()
     
     def get_main_menu(self) -> QuickReply:
         """
-        獲取主選單快速回覆按鈕
+        獲取主選單
         
         Returns:
             QuickReply: LINE 快速回覆對象
         """
+        # 每次重新生成快速回覆項目，避免緩存問題
+        items = []
+        
+        # 添加所有類別按鈕
+        for category, info in self.quick_reply_categories.items():
+            if category not in ["系統功能"]:  # 排除系統功能
+                label = info["label"]
+                emoji_prefix = ""
+                
+                # 為不同類別添加對應的符號
+                if category == "佛法學習":
+                    emoji_prefix = "📚 "
+                elif category == "生活應用":
+                    emoji_prefix = "🌱 "
+                elif category == "心靈成長":
+                    emoji_prefix = "🧘 "
+                elif category == "時事省思":
+                    emoji_prefix = "🌐 "
+                elif category == "禪修引導":
+                    emoji_prefix = "🧘‍♀️ "
+                elif category == "使用方式":
+                    emoji_prefix = "📋 "
+                
+                # 確保標籤和文本都正確設置
+                button = QuickReplyButton(
+                    action=MessageAction(
+                        label=emoji_prefix + label,
+                        text=info["text"]
+                    )
+                )
+                items.append(button)
+        
+        # 添加清除記錄按鈕
+        items.append(QuickReplyButton(
+            action=MessageAction(
+                label="🗑️ 清除記錄", 
+                text="清除對話記錄"
+            )
+        ))
+        
+        # 添加使用說明按鈕
+        items.append(QuickReplyButton(
+            action=MessageAction(
+                label="📋 使用說明", 
+                text="使用說明"
+            )
+        ))
+        
+        # 添加回饋按鈕
+        items.append(QuickReplyButton(
+            action=URIAction(
+                label="📝 提供回饋", 
+                uri=self.feedback_form_url
+            )
+        ))
+        
+        # 確保一定會返回有效的快速回覆對象
         try:
-            buttons = []
-            for category, data in self.quick_replies.items():
-                if category != "系統":  # 系統功能不顯示在主選單
-                    action = MessageAction(label=data["label"], text=data["text"])
-                    button = QuickReplyButton(action=action)
-                    buttons.append(button)
-            
-            # 添加特殊功能選項
-            action1 = MessageAction(label="📰 時事省思", text="時事省思")
-            button1 = QuickReplyButton(action=action1)
-            buttons.append(button1)
-            
-            action2 = MessageAction(label="🧘 禪修引導", text="禪修引導")
-            button2 = QuickReplyButton(action=action2)
-            buttons.append(button2)
-            
-            action3 = MessageAction(label="⚙️ 系統功能", text="系統功能")
-            button3 = QuickReplyButton(action=action3)
-            buttons.append(button3)
-            
-            # 添加用戶回饋按鈕
-            uri_action = URIAction(label="📝 用戶回饋", uri=self.feedback_form_url)
-            feedback_button = QuickReplyButton(action=uri_action)
-            buttons.append(feedback_button)
-            
-            return QuickReply(items=buttons)
+            return QuickReply(items=items)
         except Exception as e:
-            logger.error(f"獲取主選單時發生錯誤: {str(e)}")
-            # 返回簡化的選單
-            buttons = []
-            action1 = MessageAction(label="佛法學習", text="我想學習佛法")
-            button1 = QuickReplyButton(action=action1)
-            buttons.append(button1)
-            
-            action2 = MessageAction(label="生活應用", text="我想了解佛法在生活中的應用")
-            button2 = QuickReplyButton(action=action2)
-            buttons.append(button2)
-            
-            return QuickReply(items=buttons)
+            logger.error(f"創建快速回覆時發生錯誤: {str(e)}")
+            # 如果出錯，返回一個簡單的快速回覆對象
+            return QuickReply(items=[
+                QuickReplyButton(action=MessageAction(label="主選單", text="主選單"))
+            ])
     
     def handle_feedback_request(self) -> str:
         """處理用戶回饋請求"""
@@ -300,37 +496,88 @@ class QuickReplyManager:
             logger.error(f"處理用戶回饋請求時發生錯誤: {str(e)}")
             return "無法獲取回饋表單連結，請稍後再試。"
     
-    def format_markdown(self, text: str) -> str:
-        """
-        將Markdown文本轉換為LINE可接受的格式
-        
-        Args:
-            text: Markdown格式的文本
-            
-        Returns:
-            str: 格式化後的文本
-        """
+    def format_markdown(self, text):
+        """將Markdown格式的文本轉換為適合在LINE顯示的格式，保持簡潔乾淨"""
         try:
-            # 將Markdown轉換為HTML
-            html = self.md.render(text)
+            if not text:
+                return ""
             
-            # LINE不支持HTML，所以我們需要進行一些基本的文本替換
-            # 加粗 **text** -> 【text】
-            text = text.replace("**", "【").replace("**", "】")
+            # 移除【開示】標籤，但保留內容
+            text = re.sub(r'【開示】\s*', '', text)
             
-            # 斜體 *text* -> 「text」
-            text = text.replace("*", "「").replace("*", "」")
+            # 處理列表 - 簡單轉換不添加表情符號
+            text = re.sub(r'^\* ', '• ', text, flags=re.MULTILINE)
+            text = re.sub(r'^- ', '• ', text, flags=re.MULTILINE)
+            text = re.sub(r'^(\d+)\. ', r'\1. ', text, flags=re.MULTILINE)  # 保持數字列表簡潔
             
-            # 列表項 - item -> • item
-            text = text.replace("\n- ", "\n• ")
+            # 處理標題 - 不添加表情符號
+            text = re.sub(r'^# (.*?)$', r'【\1】', text, flags=re.MULTILINE)
+            text = re.sub(r'^## (.*?)$', r'【\1】', text, flags=re.MULTILINE)
+            text = re.sub(r'^### (.*?)$', r'【\1】', text, flags=re.MULTILINE)
             
-            # 添加表情符號支持
-            text = emoji.emojize(text, language='alias')
+            # 處理加粗和斜體 - 使用簡單的符號取代
+            text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)  # 移除加粗標記
+            text = re.sub(r'\*(.*?)\*', r'\1', text)      # 移除斜體標記
+            text = re.sub(r'_(.*?)_', r'\1', text)        # 移除底線標記
+            
+            # 處理引用 - 簡化引用格式
+            text = re.sub(r'^> (.*?)$', r'"\1"', text, flags=re.MULTILINE)
+            
+            # 添加適當的空行以提高可讀性
+            text = re.sub(r'\n\n', '\n\n', text)
+            
+            # 移除多餘的空行
+            text = re.sub(r'\n{3,}', '\n\n', text)
+            
+            # 只保留少量必要的關鍵詞替換，不使用表情符號
+            simple_keywords = {
+                "第一步": "第一步",
+                "第二步": "第二步",
+                "第三步": "第三步",
+                "第四步": "第四步",
+                "第五步": "第五步",
+                "解說": "解說",
+                "實踐": "實踐"
+            }
+            
+            for keyword, replacement in simple_keywords.items():
+                text = re.sub(fr'\b{keyword}\b', replacement, text)
             
             return text
         except Exception as e:
-            logger.error(f"格式化Markdown時發生錯誤: {str(e)}")
-            return text  # 返回原始文本
+            logger.error(f"Markdown格式化發生錯誤: {e}")
+            return text
+            
+    def handle_usage_guide(self) -> str:
+        """
+        處理使用方式請求
+        
+        Returns:
+            str: 使用方式指南文本
+        """
+        usage_guide = """
+# 菩薩小老師使用指南
+
+## 如何使用
+1. 直接輸入問題即可獲得回應
+2. 點擊底部快速按鈕選擇主題
+3. 清除記錄可重置對話歷史
+
+## 功能分類
+- 佛法學習：教理講解與經典解析
+- 生活應用：佛法在日常生活的運用
+- 心靈成長：情緒管理與煩惱轉化
+- 時事省思：佛法視角看待現代議題
+- 禪修引導：正念練習與冥想指導
+
+## 使用建議
+1. 一次提問一個問題效果最佳
+2. 表述清晰具體能獲得更好回應
+3. 重要問題請諮詢專業法師
+
+如有使用問題或建議，請點選「提供回饋」按鈕。
+"""
+        return self.format_markdown(usage_guide)
 
 # 單例模式實例
 quick_reply_manager = QuickReplyManager() 

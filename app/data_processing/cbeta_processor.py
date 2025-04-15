@@ -38,6 +38,13 @@ class CBETAProcessor:
         if not os.path.exists(self.data_dir):
             os.makedirs(self.data_dir)
         
+        # 設置CBETA文件夾路徑
+        self.cbeta_folder = self.data_dir
+        
+        # 設置向量數據庫路徑
+        self.vector_db_path = Path(settings.VECTOR_DB_PATH)
+        self.vector_db_path.mkdir(exist_ok=True, parents=True)
+        
         # 準備嵌入模型（僅當API密鑰可用時）
         if settings.OPENAI_API_KEY and settings.OPENAI_API_KEY != "your_openai_api_key_here":
             try:

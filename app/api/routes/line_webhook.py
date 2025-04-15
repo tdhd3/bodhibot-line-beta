@@ -771,6 +771,21 @@ async def handle_text_message(event: MessageEvent) -> None:
         await user_manager.set_user_status(user_id, "idle")
         return
     
+    # 處理使用方式
+    if user_message == "使用方式":
+        usage_guide = quick_reply_manager.handle_usage_guide()
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(
+                text=usage_guide,
+                quick_reply=quick_reply_manager.get_main_menu()
+            )
+        )
+        
+        # 重置用戶狀態為閒置
+        await user_manager.set_user_status(user_id, "idle")
+        return
+    
     # 使用回饋處理
     if user_message == "提供回饋":
         response = quick_reply_manager.handle_feedback_request()
@@ -779,13 +794,13 @@ async def handle_text_message(event: MessageEvent) -> None:
         buttons = [
             {
                 "type": "text",
-                "text": "查看使用說明",
+                "text": "使用方式",
                 "color": "#1DB446",
                 "weight": "bold",
                 "action": {
                     "type": "message",
-                    "label": "查看使用說明",
-                    "text": "查看使用說明"
+                    "label": "使用方式",
+                    "text": "使用方式"
                 }
             }
         ]
@@ -823,38 +838,6 @@ async def handle_text_message(event: MessageEvent) -> None:
         )
         
         line_bot_api.reply_message(event.reply_token, [flex_message])
-        
-        # 重置用戶狀態為閒置
-        await user_manager.set_user_status(user_id, "idle")
-        return
-    
-    # 使用說明處理
-    if user_message == "查看使用說明":
-        help_text = quick_reply_manager.handle_usage_guide()
-        
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(
-                text=help_text,
-                quick_reply=quick_reply_manager.get_main_menu()
-            )
-        )
-        
-        # 重置用戶狀態為閒置
-        await user_manager.set_user_status(user_id, "idle")
-        return
-    
-    # 使用方式處理
-    if user_message == "使用方式":
-        help_text = quick_reply_manager.handle_usage_guide()
-        
-        line_bot_api.reply_message(
-            event.reply_token,
-            TextSendMessage(
-                text=help_text,
-                quick_reply=quick_reply_manager.get_main_menu()
-            )
-        )
         
         # 重置用戶狀態為閒置
         await user_manager.set_user_status(user_id, "idle")

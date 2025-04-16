@@ -80,16 +80,37 @@ class ResponseGenerator:
 2. 內容應簡潔明瞭，避免冗長解釋
 3. 使用現代、易懂的語言表達佛法概念
 4. 根據用戶的程度調整專業術語的使用
-5. 引用經文時要自然融入回答中，不要過於學術化
-6. 如有需要引用經典，格式為「《經名》：經文內容」，簡潔明了
+5. 引用經文時要自然融入回答中，不要過於學術化，不再正文中標明出處
+6. 避免在正文中使用「出處：《經名》」這樣的格式標記，系統會自動處理引用出處
 7. 語調應親切、平等，不居高臨下
 8. 鼓勵正面思考和實際行動，但避免命令式語氣
 9. 回應長度應控制在200-300字之間
 10. 如果用戶問題暗示他們處於困境，應給予溫暖支持
+11. 引用原文時必須精確引用提供的資料，不要改變或簡化原文內容
+12. 謙遜態度：遇到密法、深奧教義或無法確定的問題時，謹慎表達並建議用戶尋求正法道場或合格法師的指導
+13. 限制：避免給出個人主觀意見、不提供外部非佛教相關資源或資訊，始終以佛法為中心進行指導
+
+修行引導順序：根據用戶修行階段，按以下順序逐步引導：
+1. 三世因果輪迴觀（適合初學者）
+2. 出離心的培養
+3. 慈悲心的修習
+4. 斷十惡行十善
+5. 菩提心的發起與實踐
+
+經典推薦順序：
+- 初學者階段：優先推薦《金剛經》或《普賢行願品》
+- 中階修行者：可推薦《楞嚴經》《地藏經》
+- 進階修行者：《法華經》《摩訶止觀》等
+
+關於引用：
+- 如有引用經文，請自然融入回答中，無需標明出處
+- 系統將自動為用戶提供CBETA鏈接，不需要你標註CBETA編號
+- 避免使用「出處：」或「引用：」等標記，保持回答的流暢性
 
 最後一段可以提供1-2個實用建議或思考方向，或引導向進一步的學習資源，但避免說教。
 
-回應:"""
+回應:
+"""
         
         # 用戶分析提示
         self.classification_prompt = """作為佛教智慧顧問「菩薩小老師」，請深入分析以下用戶提問，以便更全面地理解其需求和修行狀態。
@@ -247,8 +268,39 @@ class ResponseGenerator:
             # 2. 選擇四攝法策略
             four_she_strategy = await self.select_four_she_strategy(user_level, issue_type)
             
-            # 3. 查詢相關經文
-            relevant_texts = await self.scripture_search.search_by_query(user_query, limit=5)
+            # 3. 查詢相關經文 (使用重排序功能)
+            use_rerank = True  # 默認啟用重排序
+            use_hybrid = True  # 默認啟用混合排序策略
+            
+            # 檢查是否有特定的需要精確匹配的關鍵詞
+            if any(kw in user_query.lower() for kw in ["引用", "原文", "確切", "精確"]):
+                # 對於要求精確引用的查詢，降低多樣性權重
+                use_hybrid = False
+                logger.info("檢測到用戶需要精確引用，關閉混合排序策略")
+            
+            try:
+                # 嘗試使用新的經文檢索方法（帶重排序）
+                relevant_texts = await self.scripture_search.search_by_query(
+                    user_query, 
+                    limit=5,
+                    use_rerank=use_rerank,
+                    use_hybrid=use_hybrid
+                )
+            except Exception as e:
+                # 如果新方法失敗，記錄詳細錯誤並回退到標準搜索
+                logger.warning(f"使用帶重排序的檢索方法失敗: {str(e)}，回退到標準搜索")
+                try:
+                    # 嘗試不使用重排序
+                    relevant_texts = await self.scripture_search.search_by_query(
+                        user_query, 
+                        limit=5,
+                        use_rerank=False,
+                        use_hybrid=False
+                    )
+                except Exception as e2:
+                    # 如果標準搜索也失敗，使用最基本的參數
+                    logger.error(f"標準搜索也失敗: {str(e2)}，使用最基本檢索方法")
+                    relevant_texts = await self.scripture_search.search_by_query(user_query, limit=5)
             
             # 準備經文文本用於提示
             formatted_texts = []
@@ -304,6 +356,15 @@ class ResponseGenerator:
             
             # 5. 整理回應
             references = []
+            
+            # 從sutra_retriever中獲取經典別名映射，如果可以獲取的話
+            sutra_aliases = {}
+            try:
+                from app.services.sutra_retriever import sutra_retriever
+                sutra_aliases = getattr(sutra_retriever, 'sutra_aliases', {})
+            except ImportError:
+                logger.warning("無法導入sutra_retriever獲取經典別名")
+                
             for text in relevant_texts:
                 # 檢查回應中是否直接引用了這段經文
                 is_direct_quote = False
@@ -331,14 +392,19 @@ class ResponseGenerator:
                                 is_direct_quote = True
                                 break
                 
-                # 檢查回應中是否提到了經名
+                # 檢查回應中是否提到了經名（包括別名）
+                sutra_id = text.get("sutra_id", "")
                 sutra_name = text.get("sutra", "") if not text.get("custom", False) else text.get("source", "")
-                if sutra_name and f"《{sutra_name}》" in response_content:
-                    is_direct_quote = True
                 
-                # 檢查出處標記
-                if "出處：" in response_content and sutra_name and f"出處：《{sutra_name}》" in response_content:
-                    is_direct_quote = True
+                # 檢查所有可能的經名版本
+                possible_names = [sutra_name]
+                if sutra_id in sutra_aliases:
+                    possible_names.extend(sutra_aliases[sutra_id])
+                
+                for name in possible_names:
+                    if name and (f"《{name}》" in response_content or name in response_content):
+                        is_direct_quote = True
+                        break
                 
                 # 添加相關性分數，確保檢索到的文本始終被添加到引用列表
                 relevance_score = text.get("score", 0) if text.get("score") is not None else (0.9 if is_direct_quote else 0.7)
@@ -412,20 +478,27 @@ class ResponseGenerator:
 
                 回應核心原則：
                 1. 簡短精準：針對簡單問題回答控制在150-250字內，涉及深度佛法探討時延長至500字
-                2. 修行進階：引導用戶從因果輪迴、止惡向善，到出離心、慈悲心，了解苦集滅道，升起菩提心，修習六波羅蜜
+                2. 修行引導：按照「三世因果輪迴觀→出離心→慈悲心→斷十惡行十善→菩提心」的順序循序漸進
                 3. 唯識觀照：應用唯識學方法幫助用戶觀察自身心靈與行為模式
-                4. 經典引用：必須明確標註CBETA資源「《經名》：引文。(CBETA資源ID)」
-                6. 避免特殊格式：不使用影響閱讀的特殊標記或排版符號
+                4. 引用方式：在正文中自然引用經文但不標註出處，系統會自動處理引用格式
+                5. 避免特殊格式：不使用影響閱讀的特殊標記或排版符號
+                6. 謙遜態度：遇到密法、深奧教義或無法確定的問題時，謹慎表達並建議用戶尋求正法道場或合格法師的指導
+                7. 限制：避免給出個人主觀意見、不提供外部非佛教相關資源或資訊，始終以佛法為中心進行指導
 
-                引用格式嚴格遵守：
-                - 經典引用：「《經名》：引文。(CBETA T01n0001_p0001a01)」
-                - 知識點：「【知識點】四聖諦：佛陀的核心教導，包括苦、集、滅、道四諦。」
+                經典推薦順序：
+                - 初學者階段：優先推薦《金剛經》或《普賢行願品》
+                - 中階修行者：可推薦《楞嚴經》《地藏經》
+                - 進階修行者：《法華經》《摩訶止觀》等
+
+                關於引用：
+                - 如有引用經文，請自然融入回答中，無需標明出處
+                - 系統將自動為用戶提供CBETA鏈接，不需要你標註CBETA編號
+                - 避免使用「出處：」或「引用：」等標記，保持回答的流暢性
 
                 回答品質要求：
                 - 精準把握用戶問題核心
                 - 提供實用的唯識觀察方法
                 - 給出明確可行的修行建議
-                - 明確標註經典引用和知識點
                 - 針對簡單問題，控制在250字以內
                 - 針對深度佛法探討，可擴展至500字
                 """

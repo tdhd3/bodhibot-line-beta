@@ -17,6 +17,7 @@ from langchain_community.vectorstores import Chroma
 
 from app.core.config import settings
 from app.services.vector_store import VectorStore
+from app.services import embedding_service
 
 # 配置日誌
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -45,21 +46,15 @@ class CBETAProcessor:
         self.vector_db_path = Path(settings.VECTOR_DB_PATH)
         self.vector_db_path.mkdir(exist_ok=True, parents=True)
         
-        # 準備嵌入模型（僅當API密鑰可用時）
-        if settings.OPENAI_API_KEY and settings.OPENAI_API_KEY != "your_openai_api_key_here":
-            try:
-                self.embeddings = OpenAIEmbeddings(
-                    openai_api_key=settings.OPENAI_API_KEY,
-                    model=settings.EMBEDDING_MODEL
-                )
-                self.embedding_available = True
-            except Exception as e:
-                logger.warning(f"初始化OpenAI嵌入模型失敗: {e}")
-                self.embedding_available = False
+        # 使用嵌入服務
+        self.embedding_service = embedding_service
+        self.embedding_available = self.embedding_service.embedding_available
+        
+        # 如果嵌入服務可用，使用其embeddings屬性
+        if self.embedding_available:
+            self.embeddings = self.embedding_service.embeddings
         else:
-            logger.warning("未設置OpenAI API Key，向量存儲功能將不可用")
             self.embeddings = None
-            self.embedding_available = False
         
         # 準備文本分割器 - 針對經文的特殊性調整
         self.text_splitter = RecursiveCharacterTextSplitter(

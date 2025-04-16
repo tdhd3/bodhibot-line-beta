@@ -2,7 +2,7 @@ import logging
 import asyncio
 from pathlib import Path
 
-from fastapi import FastAPI, APIRouter, Request, HTTPException
+from fastapi import FastAPI, APIRouter, Request, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -46,31 +46,33 @@ app.include_router(api_router)
 # 添加直接的webhook端點
 app.post("/webhook")(line_webhook)
 
-# 文件處理器
-file_processor = None
-
-# CBETA處理器
-cbeta_processor = None
-
 @app.on_event("startup")
 async def startup_event():
-    """應用程式啟動時執行"""
-    global file_processor, cbeta_processor
-    
+    """應用啟動時執行的操作"""
     try:
-        # 初始化檔案處理器
+        # 初始化文件處理器
+        from app.data_processing.file_processor import FileProcessor
         file_processor = FileProcessor()
+        logger.info("File processor initialized")
         
         # 初始化CBETA處理器
+        from app.data_processing.cbeta_processor import CBETAProcessor
         cbeta_processor = CBETAProcessor()
+        logger.info("CBETA processor initialized")
         
-        # 在背景任務中啟動檔案監視
-        asyncio.create_task(file_processor.watch_folder())
+        # 初始化經典推薦器
+        from app.services.sutra_recommender import sutra_recommender
+        logger.info("Sutra recommender initialized")
         
-        logger.info("應用程式成功啟動")
-        
+        # 啟動後台任務
+        async def start_background_tasks():
+            # 在背景任務中啟動檔案監視
+            await file_processor.watch_folder()
+            
+        asyncio.create_task(start_background_tasks())
+        logger.info("Background tasks started")
     except Exception as e:
-        logger.error(f"應用程式啟動時出錯: {e}", exc_info=True)
+        logger.error(f"Error during startup: {e}", exc_info=True)
 
 @app.get("/")
 async def root():

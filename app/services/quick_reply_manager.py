@@ -449,6 +449,8 @@ class QuickReplyManager:
                     emoji_prefix = "🧘 "
                 elif category == "時事省思":
                     emoji_prefix = "🌐 "
+                    # 確保文本是"時事省思"，以便line_webhook.py可以識別
+                    info["text"] = "時事省思"
                 elif category == "禪修引導":
                     emoji_prefix = "🧘‍♀️ "
                 elif category == "使用方式":

@@ -43,7 +43,7 @@ class TestBasicFunctionality(unittest.TestCase):
         # 測試獲取和格式化新聞
         news_text = await news_processor.get_formatted_news()
         self.assertIsNotNone(news_text)
-        self.assertIn("今日省思", news_text)
+        self.assertIn("時事省思", news_text)
         return news_text
     
     def test_news_processor(self):

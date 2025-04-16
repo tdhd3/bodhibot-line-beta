@@ -15,6 +15,9 @@ class Settings:
     API_PREFIX: str = "/api"
     DEBUG: bool = os.getenv("DEBUG", "False").lower() == "true"
     
+    # 資料庫設定
+    DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./bodhibot.db")
+    
     # LINE Bot設定
     LINE_CHANNEL_SECRET: str = os.getenv("LINE_CHANNEL_SECRET", "")
     LINE_CHANNEL_ACCESS_TOKEN: str = os.getenv("LINE_CHANNEL_ACCESS_TOKEN", "")
@@ -27,6 +30,8 @@ class Settings:
     
     # 向量資料庫設定
     VECTOR_DB_PATH: str = os.getenv("VECTOR_DB_PATH", "./data/vector_db")
+    CHROMA_DB_DIR: str = os.getenv("CHROMA_DB_DIR", "data/chroma_db")
+    CHROMA_COLLECTION_NAME: str = os.getenv("CHROMA_COLLECTION_NAME", "sutras")
     
     # 資料路徑設定
     INPUT_FOLDER: str = os.getenv("INPUT_FOLDER", "./data/input")
@@ -65,6 +70,7 @@ class Settings:
     MAX_QUICK_REPLIES: int = int(os.getenv("MAX_QUICK_REPLIES", "13"))
     SUGGESTION_LIMIT: int = int(os.getenv("SUGGESTION_LIMIT", "3"))
     HISTORY_LIMIT: int = int(os.getenv("HISTORY_LIMIT", "5"))
+    MAX_HISTORY_MESSAGES: int = int(os.getenv("MAX_HISTORY_MESSAGES", "50"))
     
     # 用戶回饋表單
     USER_FEEDBACK_FORM: str = os.getenv("USER_FEEDBACK_FORM", "https://docs.google.com/forms/d/17B148aK3REfbUEtmi3isQQEkQwvvIlaKgte00Yde_zE/edit")
@@ -80,4 +86,9 @@ class Settings:
     FONT_SIZE_SMALL: str = "sm"    # 小字體尺寸
 
 # 實例化設定
-settings = Settings() 
+settings = Settings()
+
+# 以下全局變數不再需要，已合併到Settings類中
+# MAX_HISTORY_MESSAGES = 50
+# CHROMA_DB_DIR = "data/chroma_db"
+# CHROMA_COLLECTION_NAME = "sutras" 

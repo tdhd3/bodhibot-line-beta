@@ -6,8 +6,6 @@ from langchain.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 
 from app.core.config import settings
-from app.services.sutra_retriever import sutra_retriever
-from app.services.user_manager import user_manager
 
 # 配置日誌
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -19,8 +17,11 @@ class ResponseGenerator:
     負責根據用戶問題和檢索到的經文生成回應
     """
     
-    def __init__(self):
-        """初始化回應生成器"""
+    def __init__(self, vector_store, scripture_search, conversation_store):
+        self.vector_store = vector_store
+        self.scripture_search = scripture_search
+        self.conversation_store = conversation_store
+        
         # 初始化GPT模型
         self.llm = ChatOpenAI(
             openai_api_key=settings.OPENAI_API_KEY,
@@ -28,73 +29,115 @@ class ResponseGenerator:
             temperature=0.3
         )
         
-        # 初始化提示模板 - 用於生成回應
-        self.response_prompt = ChatPromptTemplate.from_template("""
-您是「菩薩小老師」，一位結合唯識學智慧的佛法導師，能以自然又有深度的方式引導學習者。
-
-用戶問題：{user_query}
-
-以下是與問題相關的經文:
-{relevant_texts}
-
-回應指南：
-1. 根據用戶層級（{response_level}）調整回應深度，採用{four_she_strategy}的溝通方式
-2. 以簡潔自然的對話風格回應，同時保持專業深度
-3. 從唯識學「八識」的角度分析用戶問題根源
-4. 提供具體可行的方法，而非表面的開示
-5. 適當引用經文支持觀點，使用完整出處格式：
-   - 直接引用：「出處：《經名》，原文：「引用原文」，CBETA網址：https://cbetaonline.dila.edu.tw/zh/[經文ID]」
-   - 相關參考：「相關資料：《經名》，CBETA網址：https://cbetaonline.dila.edu.tw/zh/[經文ID]」
-6. 回應文字控制在300-400字內，簡潔有力
-
-請以專業而親切的方式回應，注重深度分析和具體建議：
-""")
+        # 初始化OpenAI客戶端，用於直接API調用
+        from openai import OpenAI
+        self.client = OpenAI(api_key=settings.OPENAI_API_KEY)
         
-        # 初始化提示模板 - 用於分類用戶認知層級
-        self.classification_prompt = ChatPromptTemplate.from_template("""
-您是「菩薩小老師」，一位善於理解用戶需求的佛法智慧導師。請根據用戶的問題，判斷其修行階段和問題類型。
-
-用戶問題：{user_query}
-
-修行階段分類：
-1. 初入門階段：對佛法知識尚淺，思維方式較為世俗，關注現實問題
-2. 基礎修學階段：已接觸佛法基本概念，開始思考更深層問題
-3. 深入理解階段：系統性學習佛法，能將佛法與生活連結
-4. 行證實踐階段：有深厚佛法基礎，關注修行實踐和證悟過程
-
-問題類型：
-1. 煩惱解脫型：尋求解決現實煩惱的方法
-2. 見解調和型：探討佛法與現代生活的融合
-3. 生命意義型：對人生意義的探尋
-4. 求法精進型：主動尋求佛法智慧和修行方法
-
-請以JSON格式簡要分析用戶的階段和問題類型：
-""")
+        # 修行階段描述
+        self.user_level_descriptions = {
+            "初入門階段": "正在開始接觸佛法基礎知識，可能對核心概念如四聖諦、八正道還不熟悉",
+            "基礎修行階段": "已了解基本教義，開始培養正念、禪修等修行習慣",
+            "進階修行階段": "具備較深的教理理解，並有穩定的修行習慣，開始體驗內在轉化"
+        }
         
-        # 初始化四攝法策略選擇提示模板
-        self.four_she_prompt = ChatPromptTemplate.from_template("""
-您是「菩薩小老師」，一位精通四攝法的智慧導師。根據用戶的修行階段和問題類型，請選擇最適合的四攝法策略。
+        # 問題類型描述
+        self.issue_type_descriptions = {
+            "教理理解型": "尋求對佛教概念、經典或教義的澄清和理解",
+            "修行方法型": "尋求具體的修行指導、禪修方法或實踐建議",
+            "煩惱解脫型": "尋求化解生活中的痛苦、煩惱或情感困擾的方法",
+            "信仰疑惑型": "對佛教某些信仰或主張產生疑惑或需要確認"
+        }
+        
+        # 四攝法策略描述
+        self.four_she_strategies = {
+            "布施": "無條件給予清晰的知識和信息，保持客觀且豐富的資訊分享",
+            "愛語": "使用溫和、鼓勵的語言，著重情感連接和心理支持",
+            "利行": "提供實用的步驟化指導和具體方法，強調實際應用",
+            "同事": "以平等態度進行深度理性討論，承認多元觀點，共同探索"
+        }
+        
+        # 當前用戶狀態（默認值）
+        self.current_user_level = "初入門階段"
+        self.current_issue_type = "教理理解型"
+        self.current_strategy = "布施"
+        
+        # 回應生成提示
+        self.response_prompt = """你是一個名為「菩薩小老師」的佛學顧問AI，基於佛教教義與經典回答用戶問題。
 
-用戶修行階段：{user_level}
-問題類型：{issue_type}
+用戶分析:
+{classification}
 
-四攝法包括：
-1. 布施（Dana）：通過無條件給予幫助建立關係，包括法布施、無畏布施和財布施
-2. 愛語（Priyavacana）：以溫和、親切且循循善誘的言語引導
-3. 利行（Arthakrtya）：提供實用方法，指導學習者走向正確的修行道路
-4. 同事（Samanarthata）：與學習者站在同一立場，以同修身份交流，融入其處境
+用戶問題:
+{query}
 
-請考慮以下對應關係：
-- 初入門階段的用戶通常適合布施和愛語為主的策略
-- 基礎修學階段的用戶適合愛語和利行策略
-- 深入理解和行證實踐階段的用戶適合利行和同事策略
-- 煩惱解脫型問題適合愛語和利行
-- 見解調和型問題適合利行和同事
-- 生命意義型問題適合布施和愛語
-- 求法精進型問題適合利行和同事
+相關經文資料:
+{sources}
 
-請指定最適合的策略（僅選一個）：
-""")
+請根據上述資訊，提供一個既有智慧又親切的回應。回應應直接針對用戶的核心問題，語調溫和、清晰且貼近日常對話。
+
+回應需遵循這些指導原則:
+1. 直接回答用戶問題，無需開場白或問候語
+2. 內容應簡潔明瞭，避免冗長解釋
+3. 使用現代、易懂的語言表達佛法概念
+4. 根據用戶的程度調整專業術語的使用
+5. 引用經文時要自然融入回答中，不要過於學術化
+6. 如有需要引用經典，格式為「《經名》：經文內容」，簡潔明了
+7. 語調應親切、平等，不居高臨下
+8. 鼓勵正面思考和實際行動，但避免命令式語氣
+9. 回應長度應控制在200-300字之間
+10. 如果用戶問題暗示他們處於困境，應給予溫暖支持
+
+最後一段可以提供1-2個實用建議或思考方向，或引導向進一步的學習資源，但避免說教。
+
+回應:"""
+        
+        # 用戶分析提示
+        self.classification_prompt = """作為佛教智慧顧問「菩薩小老師」，請深入分析以下用戶提問，以便更全面地理解其需求和修行狀態。
+
+用戶提問:
+{query}
+
+請提供全面的用戶分析，著重理解：
+1. 用戶的修行程度 (初學者、有一定基礎、進階修行者)
+2. 用戶的情感狀態 (困惑、痛苦、好奇、尋求確認等)
+3. 問題的出發點與真正關心的核心問題
+4. 問題背後可能隱藏的擔憂、煩惱或期望
+5. 用戶提問的真實動機和生活情境
+6. 用戶可能的文化背景和思維模式
+7. 適合的回應深度和專業度
+
+請以第三人稱撰寫一段分析，避免使用「我認為」等字眼。分析應該簡潔但深入，長度約150-250字。基於佛法的觀點進行分析，但避免急於給出建議，這僅是分析階段。
+
+分析結果:"""
+        
+        # 四攝選擇提示
+        self.four_she_prompt = """基於以下用戶分析和問題，請從佛教四攝法（布施、愛語、利行、同事）中選擇最合適的溝通策略。
+
+用戶分析:
+{user_analysis}
+
+用戶提問:
+{query}
+
+請深入理解用戶的真實需求、心理狀態和修行程度，然後從以下四種策略中選擇最適合的一種：
+
+1. 布施（Dana）：無條件給予知識和智慧
+   - 適合：純粹尋求資訊的用戶、初學者、好奇心驅動的提問
+   - 特點：直接提供清晰的知識，不附加條件
+
+2. 愛語（Priyavacana）：溫和、鼓勵的語言
+   - 適合：正經歷困難、情緒低落、需要心理支持的用戶
+   - 特點：溫暖關懷的語調，重視情感連接，給予鼓勵
+
+3. 利行（Arthakrtya）：提供實用的建議和方法
+   - 適合：尋求實踐指導、具體修行方法的用戶
+   - 特點：實用性強，提供步驟化指導，著重解決方案
+
+4. 同事（Samanarthata）：以平等的態度分享經驗
+   - 適合：進階修行者、質疑者、或需要深度交流的用戶
+   - 特點：平等對話，理性討論，承認多元觀點
+
+請只回答一個最適合的策略名稱（布施、愛語、利行或同事）："""
         
     async def classify_user_input(self, user_query: str) -> Dict[str, str]:
         """
@@ -109,7 +152,7 @@ class ResponseGenerator:
         try:
             # 準備提示
             classification_prompt = self.classification_prompt.format(
-                user_query=user_query
+                query=user_query
             )
             
             # 調用LLM
@@ -151,54 +194,33 @@ class ResponseGenerator:
                 "type": "煩惱解脫型"
             }
     
-    async def select_four_she_strategy(self, user_level: str, issue_type: str) -> str:
+    async def select_four_she_strategy(self, user_analysis: str, query: str) -> str:
         """
         根據用戶認知層級和問題類型選擇四攝法策略
         
         Args:
-            user_level: 用戶認知層級
-            issue_type: 問題類型
+            user_analysis: 用戶分析
+            query: 用戶問題
             
         Returns:
             str: 選擇的四攝法策略
         """
         try:
             # 準備提示
-            strategy_prompt = self.four_she_prompt.format(
-                user_level=user_level,
-                issue_type=issue_type
+            four_she_prompt = self.four_she_prompt.format(
+                user_analysis=user_analysis,
+                query=query
             )
             
             # 調用LLM
-            strategy_response = self.llm.invoke(strategy_prompt)
+            response = self.llm.invoke(four_she_prompt)
             
-            # 提取策略名稱
-            strategy = strategy_response.content.strip()
-            
-            # 標準化策略名稱
-            if "布施" in strategy:
-                return "布施"
-            elif "愛語" in strategy:
-                return "愛語"
-            elif "利行" in strategy:
-                return "利行"
-            elif "同事" in strategy:
-                return "同事"
-            else:
-                # 根據層級指定默認策略
-                if "初入門" in user_level or "一層" in user_level:
-                    return "布施"
-                elif "基礎修學" in user_level or "二層" in user_level:
-                    return "愛語"
-                elif "深入理解" in user_level or "三層" in user_level:
-                    return "利行"
-                else:
-                    return "同事"
-                
+            strategy = response.content.strip()
+            logger.info(f"選擇的四攝法策略: {strategy}")
+            return strategy
         except Exception as e:
-            logger.error(f"選擇四攝法策略時出錯: {e}", exc_info=True)
-            # 返回默認策略
-            return "愛語"
+            logger.error(f"選擇四攝法策略時出錯: {e}")
+            return "布施"  # 預設選擇布施
     
     async def generate_response(self, user_query: str, user_id: str = "anonymous") -> Dict:
         """
@@ -216,33 +238,39 @@ class ResponseGenerator:
             classification = await self.classify_user_input(user_query)
             user_level = classification["level"]
             issue_type = classification["type"]
+            user_motivation = classification.get("motivation", "尋求佛法智慧指導")
+            approach_suggestion = classification.get("approach_suggestion", "")
+            
+            # 記錄更詳細的用戶分析以便調整回應
+            logger.info(f"用戶分析 - 階段: {user_level}, 類型: {issue_type}, 動機: {user_motivation}")
             
             # 2. 選擇四攝法策略
             four_she_strategy = await self.select_four_she_strategy(user_level, issue_type)
             
             # 3. 查詢相關經文
-            relevant_texts = await sutra_retriever.query_sutra(user_query, top_k=3)
+            relevant_texts = await self.scripture_search.search_by_query(user_query, limit=5)
             
             # 準備經文文本用於提示
             formatted_texts = []
             for i, text in enumerate(relevant_texts):
-                if "custom_document" in text and text["custom_document"]:
+                if text.get("custom", False):
                     # 自定義文檔
-                    formatted_texts.append(f"{i+1}. 自定義文檔《{text['source']}》:\n{text['text']}")
+                    formatted_texts.append(f"{i+1}. 自定義文檔《{text.get('source', '')}》:\n{text.get('text', '')}")
                 else:
                     # CBETA經文
-                    formatted_texts.append(f"{i+1}. 經典《{text['sutra']}》(ID: {text['sutra_id']}):\n{text['text']}")
+                    formatted_texts.append(f"{i+1}. 經典《{text.get('sutra', '')}》(ID: {text.get('sutra_id', '')}):\n{text.get('text', '')}")
             
             texts_str = "\n\n".join(formatted_texts) if formatted_texts else "未找到相關經文。"
             
             # 獲取對話歷史
-            chat_history = await user_manager.get_chat_history(user_id)
+            chat_history = await self.conversation_store.get_conversation_history(user_id)
             history_context = ""
             
             # 格式化對話歷史
             if chat_history and len(chat_history) > 0:
                 # 只使用最近的幾輪對話
-                recent_history = chat_history[-settings.HISTORY_LIMIT * 2:]  # 用戶和機器人的消息對
+                history_limit = getattr(settings, "HISTORY_LIMIT", 5)
+                recent_history = chat_history[-history_limit*2:]  # 用戶和機器人的消息對
                 
                 history_pairs = []
                 for i in range(0, len(recent_history), 2):
@@ -257,10 +285,9 @@ class ResponseGenerator:
             
             # 4. 生成回應
             response_prompt = self.response_prompt.format(
-                user_query=user_query,
-                relevant_texts=texts_str,
-                response_level=user_level,
-                four_she_strategy=four_she_strategy
+                query=user_query,
+                classification=f"階段: {user_level}, 類型: {issue_type}, 動機: {user_motivation}",
+                sources=texts_str
             )
             
             # 如果有對話歷史，加到提示中
@@ -271,21 +298,25 @@ class ResponseGenerator:
             response = self.llm.invoke(response_prompt)
             response_content = response.content
             
+            # 存儲對話
+            await self.conversation_store.store_message(user_id, "user", user_query)
+            await self.conversation_store.store_message(user_id, "assistant", response_content)
+            
             # 5. 整理回應
             references = []
             for text in relevant_texts:
                 # 檢查回應中是否直接引用了這段經文
                 is_direct_quote = False
                 if text.get("text"):
-                    # 檢查至少15個字符的片段是否出現在回應中
-                    min_quote_length = 15
+                    # 檢查至少8個字符的片段是否出現在回應中
+                    min_quote_length = 8
                     text_content = text.get("text", "")
                     
                     # 如果經文足夠長，嘗試找出可能的引用
                     if len(text_content) >= min_quote_length:
                         # 嘗試不同長度的片段
-                        for start_idx in range(0, len(text_content) - min_quote_length + 1, 5):
-                            end_idx = min(start_idx + 30, len(text_content))
+                        for start_idx in range(0, len(text_content) - min_quote_length + 1, 3):
+                            end_idx = min(start_idx + 20, len(text_content))
                             segment = text_content[start_idx:end_idx].strip()
                             
                             # 避免太短的片段
@@ -301,7 +332,7 @@ class ResponseGenerator:
                                 break
                 
                 # 檢查回應中是否提到了經名
-                sutra_name = text.get("sutra", "") if not text.get("custom_document", False) else text.get("source", "")
+                sutra_name = text.get("sutra", "") if not text.get("custom", False) else text.get("source", "")
                 if sutra_name and f"《{sutra_name}》" in response_content:
                     is_direct_quote = True
                 
@@ -309,13 +340,17 @@ class ResponseGenerator:
                 if "出處：" in response_content and sutra_name and f"出處：《{sutra_name}》" in response_content:
                     is_direct_quote = True
                 
-                if text.get("custom_document", False) or text.get("custom", False):
+                # 添加相關性分數，確保檢索到的文本始終被添加到引用列表
+                relevance_score = text.get("score", 0) if text.get("score") is not None else (0.9 if is_direct_quote else 0.7)
+                
+                if text.get("custom", False):
                     # 自定義文檔參考
                     references.append({
                         "text": text.get("text", ""),
                         "source": text.get("source", ""),
                         "custom": True,
-                        "is_direct_quote": is_direct_quote
+                        "is_direct_quote": is_direct_quote,
+                        "relevance": relevance_score
                     })
                 else:
                     # CBETA經文參考
@@ -324,7 +359,8 @@ class ResponseGenerator:
                         "sutra": text.get("sutra", ""),
                         "sutra_id": text.get("sutra_id", ""),
                         "custom": False,
-                        "is_direct_quote": is_direct_quote
+                        "is_direct_quote": is_direct_quote,
+                        "relevance": relevance_score
                     })
             
             logger.info(f"生成回應，用戶修行階段: {user_level}, 策略: {four_she_strategy}")
@@ -334,7 +370,9 @@ class ResponseGenerator:
                 "references": references,
                 "user_level": user_level,
                 "issue_type": issue_type,
-                "four_she_strategy": four_she_strategy
+                "four_she_strategy": four_she_strategy,
+                "motivation": user_motivation,
+                "approach_suggestion": approach_suggestion
             }
             
         except Exception as e:
@@ -345,7 +383,9 @@ class ResponseGenerator:
                 "references": [],
                 "user_level": "初入門階段",
                 "issue_type": "煩惱解脫型",
-                "four_she_strategy": "愛語"
+                "four_she_strategy": "布施",
+                "motivation": "尋求佛法智慧指導",
+                "approach_suggestion": ""
             }
 
     async def _get_chat_completion(self, messages: list) -> dict:
@@ -363,7 +403,7 @@ class ResponseGenerator:
             system_message = {
                 "role": "system", 
                 "content": f"""
-                你是「菩薩小老師」，一位結合唯識學智慧的佛法導師，以自然親切又有深度的方式引導學習者。
+                你是「菩薩小老師」，一位結合唯識學智慧的佛法導師，以簡短精準又有深度的方式引導學習者。
 
                 用戶情況:
                 - 修行階段: {self.user_level_descriptions[self.current_user_level]}
@@ -371,30 +411,23 @@ class ResponseGenerator:
                 - 溝通風格: {self.four_she_strategies[self.current_strategy]}
 
                 回應核心原則：
-                1. 簡潔自然的對話風格，避免說教，但保持專業深度
-                2. 辨識用戶問題背後的真正意圖和心理需求
-                3. 運用唯識學「八識」觀點分析用戶困境（前五識、意識、末那識和阿賴耶識）
-                4. 提供具體可行的建議，不流於表面的開示
-                5. 從「轉識成智」的角度引導用戶面對困難
-                6. 保持客觀，避免主觀判斷
+                1. 簡短精準：針對簡單問題回答控制在150-250字內，涉及深度佛法探討時延長至500字
+                2. 修行進階：引導用戶從因果輪迴、止惡向善，到出離心、慈悲心，了解苦集滅道，升起菩提心，修習六波羅蜜
+                3. 唯識觀照：應用唯識學方法幫助用戶觀察自身心靈與行為模式
+                4. 經典引用：必須明確標註CBETA資源「《經名》：引文。(CBETA資源ID)」
+                6. 避免特殊格式：不使用影響閱讀的特殊標記或排版符號
 
-                回答結構（靈活運用，不必固定格式）：
-                1. 簡要分析問題的根源（可從唯識學角度解釋）
-                2. 提供具體實用的方法和建議
-                3. 適當引用經典支持觀點，使用完整出處格式
-
-                引用經典時：
-                - 直接引用時：「出處：《經名》，原文：「引用原文」，CBETA網址：https://cbetaonline.dila.edu.tw/zh/經文ID」
-                - 相關參考時：「相關資料：《經名》，CBETA網址：https://cbetaonline.dila.edu.tw/zh/經文ID」
+                引用格式嚴格遵守：
+                - 經典引用：「《經名》：引文。(CBETA T01n0001_p0001a01)」
+                - 知識點：「【知識點】四聖諦：佛陀的核心教導，包括苦、集、滅、道四諦。」
 
                 回答品質要求：
                 - 精準把握用戶問題核心
-                - 提供深入而非表面的分析
-                - 給出可實踐的方法和建議
-                - 維持溫暖親切但不失專業的語氣
-                - 控制在300-400字，簡潔有力
-
-                請記住：用戶尋求的不只是理論解釋，更需要能夠幫助他們理解自己的困境，並找到實際可行的解決方案。從唯識學的角度幫助他們認識自己的心識運作，以客觀的方式引導他們面對問題。
+                - 提供實用的唯識觀察方法
+                - 給出明確可行的修行建議
+                - 明確標註經典引用和知識點
+                - 針對簡單問題，控制在250字以內
+                - 針對深度佛法探討，可擴展至500字
                 """
             }
             
@@ -438,4 +471,16 @@ class ResponseGenerator:
             }
 
 # 單例模式實例
-response_generator = ResponseGenerator() 
+# 修改單例創建方式，延遲導入依賴並提供必要的參數
+def get_response_generator():
+    from app.services.vector_store import vector_store
+    from app.services.scripture_search import scripture_search
+    from app.services.conversation_store import conversation_store
+    
+    return ResponseGenerator(
+        vector_store=vector_store,
+        scripture_search=scripture_search,
+        conversation_store=conversation_store
+    )
+
+response_generator = get_response_generator() 

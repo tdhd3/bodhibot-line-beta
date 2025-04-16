@@ -24,10 +24,26 @@ class SutraRetriever:
         self.cbeta_vectorstore_available = self.vector_store.embedding_available
         self.custom_vectorstore_available = self.vector_store.embedding_available
         
+        # 定義預設經典列表
+        self.default_sutras = [
+            {"name": "楞嚴經", "id": "T0945"},
+            {"name": "法華經", "id": "T0262"},
+            {"name": "普賢行願品", "id": "T0293"},
+            {"name": "地藏經", "id": "T0412"},
+            {"name": "藥師經", "id": "T0449"},
+            {"name": "金剛經", "id": "T0235"},
+            {"name": "六祖壇經", "id": "T2008"},
+            {"name": "摩訶止觀", "id": "T1911"}  # 包含六妙門的內容
+        ]
+        
+        # 建立經典ID映射表，方便檢索
+        self.sutra_id_map = {sutra["name"]: sutra["id"] for sutra in self.default_sutras}
+        
         if not self.cbeta_vectorstore_available:
             logger.warning("經文檢索器初始化失敗: 向量存儲服務不可用")
         else:
             logger.info("經文檢索器初始化成功")
+            logger.info(f"預設經典列表: {', '.join([s['name'] for s in self.default_sutras])}")
     
     async def query_sutra(self, user_query: str, filter_sutra: Optional[str] = None, top_k: int = 3) -> List[Dict]:
         """
@@ -52,9 +68,39 @@ class SutraRetriever:
             # 準備過濾條件
             search_filter = None
             if filter_sutra:
-                search_filter = {"source": filter_sutra}
+                # 如果提供了特定經典名稱，則僅搜索該經典
+                if filter_sutra in self.sutra_id_map:
+                    # 如果是預設經典之一，使用其ID作為過濾條件
+                    search_filter = {"sutra_id": self.sutra_id_map[filter_sutra]}
+                else:
+                    # 否則使用經典名稱作為過濾條件
+                    search_filter = {"source": filter_sutra}
             
-            # 搜索CBETA經典
+            # 首先在預設經典中搜索
+            default_results = []
+            for sutra in self.default_sutras:
+                # 對每部預設經典進行搜索
+                sutra_filter = {"sutra_id": sutra["id"]}
+                sutra_results = self.vector_store.search(
+                    query=user_query,
+                    collection_name="cbeta_sutras",
+                    filter_dict=sutra_filter,
+                    k=top_k
+                )
+                
+                # 處理搜索結果
+                for result in sutra_results:
+                    result["custom_document"] = False
+                    default_results.append(result)
+            
+            # 如果預設經典中找到了足夠的結果，則使用這些結果
+            if len(default_results) >= top_k:
+                logger.info(f"預設經典搜索結果數量: {len(default_results)}")
+                # 按相關性排序結果
+                default_results.sort(key=lambda x: x.get("relevance", 0), reverse=True)
+                return default_results[:top_k]
+            
+            # 如果預設經典中結果不足，則搜索所有CBETA經典
             cbeta_results = self.vector_store.search(
                 query=user_query,
                 collection_name="cbeta_sutras",
@@ -69,12 +115,15 @@ class SutraRetriever:
             
             logger.info(f"CBETA搜索結果數量: {len(cbeta_results)}")
             
-            # 如果CBETA結果為空，使用後備結果
-            if len(cbeta_results) == 0:
-                logger.warning("CBETA搜索結果為空，使用後備結果")
+            # 合併預設經典搜索結果和CBETA搜索結果
+            all_results = default_results + results
+            
+            # 如果結果為空，使用後備結果
+            if len(all_results) == 0:
+                logger.warning("搜索結果為空，使用後備結果")
                 fallback_results = self._get_fallback_results()
                 if fallback_results:
-                    results.extend(fallback_results)
+                    all_results.extend(fallback_results)
             
             # 搜索自定義文檔
             custom_results = self.vector_store.search(
@@ -86,15 +135,24 @@ class SutraRetriever:
             # 處理自定義文檔搜索結果
             for result in custom_results:
                 result["custom_document"] = True
-                results.append(result)
+                all_results.append(result)
             
             logger.info(f"自定義文檔搜索結果數量: {len(custom_results)}")
             
+            # 移除重複結果（基於sutra_id和text）
+            unique_results = []
+            seen_ids = set()
+            for result in all_results:
+                result_id = result.get("sutra_id", "") + result.get("text", "")[:50]
+                if result_id not in seen_ids:
+                    seen_ids.add(result_id)
+                    unique_results.append(result)
+            
             # 按相關性排序結果
-            results.sort(key=lambda x: x.get("relevance", 0), reverse=True)
+            unique_results.sort(key=lambda x: x.get("relevance", 0), reverse=True)
             
             # 限制結果數量
-            return results[:top_k]
+            return unique_results[:top_k]
             
         except Exception as e:
             logger.error(f"查詢經文時出錯: {e}", exc_info=True)
@@ -108,27 +166,34 @@ class SutraRetriever:
             List[Dict]: 後備結果
         """
         try:
-            # 準備一些後備佛教教義，以防向量搜索失敗
+            # 使用預設經典作為後備結果
             fallback_results = [
                 {
-                    "text": "佛陀教導我們，一切皆苦，苦由貪欲而生，斷除貪欲可得涅槃，而八正道是通往涅槃之路。這是佛教的四聖諦，是佛法的核心教義。",
-                    "sutra": "《雜阿含經》",
-                    "sutra_id": "T0099",
+                    "text": "楞嚴經雲：「一切業障，皆從妄想生。若欲懺悔，端坐念實相。」修行者當觀照自心，認識真實本性。",
+                    "sutra": "《楞嚴經》",
+                    "sutra_id": "T0945",
                     "relevance": 0.85,
                     "custom_document": False
                 },
                 {
-                    "text": "菩薩修行六度波羅蜜：布施、持戒、忍辱、精進、禪定、般若。通過這六種修行，菩薩能夠累積福德和智慧，最終成就佛道。",
-                    "sutra": "《大智度論》",
-                    "sutra_id": "T1509",
+                    "text": "法華經說：「諸佛兩足尊，知法常無性，佛種從緣起，是故說一乘。」一切眾生皆有佛性，終將成佛。",
+                    "sutra": "《法華經》",
+                    "sutra_id": "T0262",
                     "relevance": 0.82,
                     "custom_document": False
                 },
                 {
-                    "text": "心若清淨，便見如來。所謂佛性，人人本具，只因妄想執著而不能證得。放下妄想，返歸本性，即是成佛之道。",
+                    "text": "金剛經云：「凡所有相，皆是虛妄。若見諸相非相，即見如來。」應離一切相而修行，不執著於任何形式。",
+                    "sutra": "《金剛經》",
+                    "sutra_id": "T0235",
+                    "relevance": 0.80,
+                    "custom_document": False
+                },
+                {
+                    "text": "六祖惠能云：「菩提本無樹，明鏡亦非台，本來無一物，何處惹塵埃？」心若清淨，便見如來。",
                     "sutra": "《六祖壇經》",
                     "sutra_id": "T2008",
-                    "relevance": 0.80,
+                    "relevance": 0.78,
                     "custom_document": False
                 }
             ]

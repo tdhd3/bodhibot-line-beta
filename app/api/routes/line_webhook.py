@@ -13,12 +13,16 @@ from linebot.models import (
     FlexSendMessage, QuickReply, QuickReplyButton, 
     MessageAction, URIAction, PostbackAction
 )
+from sqlalchemy.orm import Session
 
 from app.core.config import settings
 from app.services.response_generator import response_generator
 from app.services.quick_reply_manager import quick_reply_manager
 from app.services.news_processor import news_processor
 from app.services.user_manager import user_manager
+from app.db.database import get_db
+from app.db.crud import get_user_by_line_id, create_user, create_message
+from app.services.query_processor import process_user_query
 
 # 配置日誌
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -30,6 +34,18 @@ router = APIRouter()
 line_bot_api = LineBotApi(settings.LINE_CHANNEL_ACCESS_TOKEN)
 parser = WebhookParser(settings.LINE_CHANNEL_SECRET)
 handler = WebhookHandler(settings.LINE_CHANNEL_SECRET)
+
+# 初始化訊息
+init_messages = [
+    {
+        "type": "text",
+        "text": "歡迎使用「菩薩小老師」！\n\n我能解答佛法相關問題，提供修行指導，並融合唯識學智慧。請隨時向我提問，讓佛法帶來心靈的平靜與智慧。"
+    },
+    {
+        "type": "text", 
+        "text": "您可以這樣問我：\n- 如何面對工作壓力？\n- 唯識學如何解釋妄念？\n- 我該如何開始修行？\n- 如何理解「緣起性空」？"
+    }
+]
 
 # 確保所有消息都有快速回覆選項
 def ensure_quick_replies(messages: List[Union[TextSendMessage, FlexSendMessage]]) -> List[Union[TextSendMessage, FlexSendMessage]]:
@@ -51,7 +67,7 @@ def ensure_quick_replies(messages: List[Union[TextSendMessage, FlexSendMessage]]
 
 def format_references(references: list) -> Dict[str, Any]:
     """
-    格式化參考資料為LINE Flex Message
+    格式化參考資料為LINE Flex Message，更簡潔明了
     
     Args:
         references: 參考資料列表
@@ -61,25 +77,34 @@ def format_references(references: list) -> Dict[str, Any]:
     """
     bubble_contents = []
     
-    # 只顯示至多3個參考資料，避免過多引用
-    processed_references = references[:3]
+    # 根據相關性排序所有參考資料，確保最相關的在最前面
+    sorted_references = sorted(
+        references, 
+        key=lambda x: x.get("relevance", 0) if x.get("relevance") is not None else (
+            0.9 if x.get("is_direct_quote", False) else 0.7
+        ), 
+        reverse=True
+    )
+    
+    # 只顯示相關性最高的3個引用
+    processed_references = sorted_references[:3]
     
     for i, ref in enumerate(processed_references):
         # 檢查是否為自定義文檔還是CBETA經文
         if ref.get("custom_document", False) or ref.get("custom", False):
             # 自定義文檔
-            reference_type = "出處" if ref.get("is_direct_quote", False) else "相關資料"
+            source_name = ref.get('source', '參考資料')
             
             bubble = {
                 "type": "bubble",
-                "size": "kilo",
+                "size": "mega",
                 "header": {
                     "type": "box",
                     "layout": "vertical",
                     "contents": [
                         {
                             "type": "text",
-                            "text": f"{reference_type}：《{ref.get('source', '參考資料')}》",
+                            "text": f"《{source_name}》",
                             "weight": "bold",
                             "color": "#1DB446",
                             "size": settings.FONT_SIZE_MEDIUM
@@ -93,7 +118,7 @@ def format_references(references: list) -> Dict[str, Any]:
                     "contents": [
                         {
                             "type": "text",
-                            "text": ref.get("text", "")[:100] + "..." if len(ref.get("text", "")) > 100 else ref.get("text", ""),
+                            "text": ref.get("text", "")[:150] + "..." if len(ref.get("text", "")) > 150 else ref.get("text", ""),
                             "size": settings.FONT_SIZE_SMALL,
                             "wrap": True,
                             "color": "#555555"
@@ -101,28 +126,6 @@ def format_references(references: list) -> Dict[str, Any]:
                     ],
                     "spacing": "md",
                     "paddingAll": "12px"
-                },
-                "footer": {
-                    "type": "box",
-                    "layout": "vertical",
-                    "contents": [
-                        {
-                            "type": "text",
-                            "text": "自定義文檔",
-                            "size": "xs",
-                            "color": "#aaaaaa",
-                            "align": "center"
-                        }
-                    ],
-                    "paddingAll": "8px"
-                },
-                "styles": {
-                    "header": {
-                        "separator": True
-                    },
-                    "footer": {
-                        "separator": True
-                    }
                 }
             }
         else:
@@ -132,69 +135,56 @@ def format_references(references: list) -> Dict[str, Any]:
             # 確保使用有效的URL
             url = f"https://cbetaonline.dila.edu.tw/zh/{sutra_id}" if sutra_id else "https://cbetaonline.dila.edu.tw/"
             
-            # 判斷是直接引用還是參考資料
-            reference_type = "出處" if ref.get("is_direct_quote", False) else "相關資料"
+            # 提取文本內容，顯示經文片段
+            text_content = ref.get("text", "")
+            content_to_show = text_content[:150] + "..." if len(text_content) > 150 else text_content
             
-            # 根據引用類型調整顯示內容
-            body_contents = []
+            # 移除sutra_name中可能的書名號，避免重複
+            clean_sutra_name = sutra_name.replace('《', '').replace('》', '')
             
-            # 如果是直接引用才顯示原文
-            if ref.get("is_direct_quote", False):
-                body_contents.append({
+            body_contents = [
+                {
                     "type": "text",
-                    "text": f"原文：{ref.get('text', '')[:100] + '...' if len(ref.get('text', '')) > 100 else ref.get('text', '')}",
-                    "size": settings.FONT_SIZE_SMALL,
-                    "wrap": True,
-                    "style": "italic",
-                    "color": "#555555"
-                })
-            else:
-                body_contents.append({
-                    "type": "text",
-                    "text": f"本經與您的問題相關，可供參考",
+                    "text": f"{content_to_show}",
                     "size": settings.FONT_SIZE_SMALL,
                     "wrap": True,
                     "color": "#555555"
-                })
-            
-            # 添加分隔線
-            body_contents.append({
-                "type": "separator",
-                "margin": "md"
-            })
-            
-            # 添加經文ID
-            body_contents.append({
-                "type": "text",
-                "text": f"CBETA ID: {sutra_id}",
-                "size": "xs",
-                "color": "#aaaaaa",
-                "margin": "md"
-            })
-            
-            # 添加查看按鈕
-            body_contents.append({
-                "type": "button",
-                "action": {
-                    "type": "uri",
-                    "label": "查看完整經文",
-                    "uri": url
                 },
-                "style": "link",
-                "margin": "sm",
-                "height": "sm"
-            })
+                {
+                    "type": "separator",
+                    "margin": "md",
+                    "color": "#f5f5f5"
+                },
+                {
+                    "type": "text",
+                    "text": f"CBETA: {sutra_id}",
+                    "size": "xs",
+                    "color": "#aaaaaa",
+                    "margin": "sm"
+                },
+                {
+                    "type": "button",
+                    "action": {
+                        "type": "uri",
+                        "label": "查看完整經文",
+                        "uri": url
+                    },
+                    "style": "link",
+                    "margin": "sm",
+                    "height": "sm"
+                }
+            ]
             
             bubble = {
                 "type": "bubble",
-                "size": "kilo",
+                "size": "mega",
                 "header": {
                     "type": "box",
                     "layout": "vertical",
                     "contents": [
                         {
                             "type": "text",
-                            "text": f"{reference_type}：《{sutra_name}》",
+                            "text": f"《{clean_sutra_name}》",
                             "weight": "bold",
                             "color": "#1DB446",
                             "size": settings.FONT_SIZE_MEDIUM
@@ -234,15 +224,6 @@ def format_references(references: list) -> Dict[str, Any]:
                         "wrap": True,
                         "align": "center",
                         "color": "#888888"
-                    },
-                    {
-                        "type": "text",
-                        "text": "菩薩小老師依據佛教教義綜合回答",
-                        "size": settings.FONT_SIZE_SMALL,
-                        "wrap": True,
-                        "align": "center",
-                        "color": "#aaaaaa",
-                        "margin": "md"
                     }
                 ],
                 "paddingAll": "20px"
@@ -520,8 +501,8 @@ async def handle_text_message(event: MessageEvent) -> None:
             # 從用戶輸入自動檢測內容類別
             category = quick_reply_manager._get_category_by_keywords(user_message)
             
-            # 添加類別標題，但使用簡潔的方式
-            formatted_response = f"【{category}】\n\n" + formatted_response
+            # 移除標題添加的部分，直接使用格式化後的回應
+            # formatted_response = f"【{category}】\n\n" + formatted_response
             
             # 移除多餘的視覺標記和表情符號
             # 回覆主要訊息
@@ -530,15 +511,14 @@ async def handle_text_message(event: MessageEvent) -> None:
                 TextSendMessage(text=formatted_response, quick_reply=quick_reply_manager.get_main_menu())
             ]
             
-            # 如果有引用經文，添加Flex Message
-            if references:
-                flex_message = FlexSendMessage(
-                    alt_text="相關經文",
-                    contents=format_references(references)
-                )
-                # 確保添加快速回覆按鈕
-                flex_message.quick_reply = quick_reply_manager.get_main_menu()
-                messages_to_reply.append(flex_message)
+            # 始終顯示引用經文的Flex Message，即使沒有引用也顯示提示
+            flex_message = FlexSendMessage(
+                alt_text="相關經文",
+                contents=format_references(references)
+            )
+            # 確保添加快速回覆按鈕
+            flex_message.quick_reply = quick_reply_manager.get_main_menu()
+            messages_to_reply.append(flex_message)
             
             # 確保所有消息都有快速回覆按鈕
             for msg in messages_to_reply:
@@ -854,31 +834,26 @@ async def handle_text_message(event: MessageEvent) -> None:
     # 應用Markdown格式化，保持簡潔
     formatted_response = quick_reply_manager.format_markdown(response_text)
     
-    # 美化回應文本中的分隔線，使用簡單的分隔線
+    # 美化回應文本，移除多餘的符號和標記
     formatted_response = formatted_response.replace("\n---\n", "\n" + "----------" + "\n")
+    formatted_response = formatted_response.replace("【", "")
+    formatted_response = formatted_response.replace("】", "")
+    formatted_response = formatted_response.replace("*", "")
     
-    # 從用戶輸入自動檢測內容類別
-    category = quick_reply_manager._get_category_by_keywords(user_message)
-    
-    # 添加類別標題，但使用簡潔的方式
-    formatted_response = f"【{category}】\n\n" + formatted_response
-    
-    # 移除多餘的視覺標記和表情符號
     # 回覆主要訊息
     messages_to_reply = [
         # 主要回應文本
         TextSendMessage(text=formatted_response, quick_reply=quick_reply_manager.get_main_menu())
     ]
     
-    # 如果有引用經文，添加Flex Message
-    if references:
-        flex_message = FlexSendMessage(
-            alt_text="相關經文",
-            contents=format_references(references)
-        )
-        # 確保添加快速回覆按鈕
-        flex_message.quick_reply = quick_reply_manager.get_main_menu()
-        messages_to_reply.append(flex_message)
+    # 始終顯示引用經文的Flex Message，即使沒有引用也顯示提示
+    flex_message = FlexSendMessage(
+        alt_text="相關經文",
+        contents=format_references(references)
+    )
+    # 確保添加快速回覆按鈕
+    flex_message.quick_reply = quick_reply_manager.get_main_menu()
+    messages_to_reply.append(flex_message)
     
     # 確保所有消息都有快速回覆按鈕
     for msg in messages_to_reply:
@@ -985,4 +960,94 @@ async def get_news():
         return JSONResponse(
             status_code=500,
             content={"status": "error", "message": str(e)}
-        ) 
+        )
+
+@router.post("/line-webhook")
+async def callback(request: Request, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
+    """
+    LINE Webhook 處理器 (替代版本)
+    接收來自LINE平台的事件通知，並直接處理
+    """
+    # 獲取請求頭部的簽名
+    signature = request.headers.get('X-Line-Signature', '')
+    
+    # 獲取請求體
+    body = await request.body()
+    body_str = body.decode('utf-8')
+    
+    # 驗證簽名
+    try:
+        # 解析事件
+        events = parser.parse(body_str, signature)
+        
+        # 處理每個事件
+        for event in events:
+            # 線上處理部分（只處理文字訊息）
+            if event.type == "message" and event.message.type == "text":
+                user_id = event.source.user_id
+                user_message = event.message.text
+                reply_token = event.reply_token
+
+                # 創建或獲取用戶
+                user_info = await line_bot_api.get_profile(user_id)
+                db_user = get_user_by_line_id(db, user_id)
+                if db_user is None:
+                    db_user = create_user(db, user_id, user_info.display_name)
+                    # 發送歡迎訊息
+                    welcome_text = """歡迎使用「菩薩小老師」！
+                    
+我能幫助您了解佛法、解答修行問題。您可以：
+1️⃣ 直接提問佛法問題
+2️⃣ 選擇下方選單功能
+
+願您在佛法的道路上找到智慧與平靜 🙏"""
+                    await line_bot_api.reply_message(
+                        reply_token,
+                        TextSendMessage(text=welcome_text)
+                    )
+                    continue
+
+                # 記錄用戶訊息
+                create_message(db, db_user.id, "user", user_message)
+
+                # 處理主選單指令
+                if user_message == "主選單" or user_message == "選單" or user_message == "menu":
+                    menu_text = """您好，我是『菩薩小老師』😊
+
+請問您想了解什麼？
+- 佛法問題：直接輸入您的問題
+- 查詢經典：輸入"查經典 關鍵詞"
+- 推薦經典：輸入"推薦經典"
+- 歷史對話：輸入"歷史對話"
+- 清除對話：輸入"清除對話"
+                    """
+                    await line_bot_api.reply_message(
+                        reply_token,
+                        TextSendMessage(text=menu_text)
+                    )
+                    continue
+                
+                # 處理一般佛法問答
+                background_tasks.add_task(
+                    process_user_query,
+                    db,
+                    db_user,
+                    user_message,
+                    reply_token
+                )
+                
+                # 直接回覆處理中訊息
+                processing_text = "菩薩小老師依據佛教教義綜合回答中，請稍候..."
+                await line_bot_api.reply_message(
+                    reply_token,
+                    TextSendMessage(text=processing_text)
+                )
+            
+        return {"status": "success"}
+        
+    except InvalidSignatureError:
+        logger.error("無效的簽名")
+        raise HTTPException(status_code=400, detail="無效的簽名")
+    except Exception as e:
+        logger.error(f"處理LINE Webhook時出錯: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"處理LINE Webhook時出錯: {str(e)}") 
